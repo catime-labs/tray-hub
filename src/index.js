@@ -28,7 +28,11 @@ export default {
 
         const match = url.pathname.match(/^\/v1\/assets\/([^/]+)\/(.+)$/);
         if (match) {
-            return serveAsset(request, env, decodeURIComponent(match[1]), decodeURIComponent(match[2]), cors);
+            try {
+                return serveAsset(request, env, decodeURIComponent(match[1]), decodeURIComponent(match[2]), cors);
+            } catch {
+                return json({ error: 'Invalid asset path' }, 400, cors);
+            }
         }
 
         return json({ error: 'Not found' }, 404, cors);
@@ -45,8 +49,13 @@ async function serveAsset(request, env, collectionKey, filename, cors) {
 
     const assetUrl = new URL(request.url);
     assetUrl.pathname = `/assets/${encodeURIComponent(collection.key)}/${filename.split('/').map(encodeURIComponent).join('/')}`;
-    const assetResponse = await env.ASSETS.fetch(new Request(assetUrl, { method: 'GET' }));
-    if (!assetResponse.ok) return json({ error: 'Asset unavailable' }, 502, cors);
+    const assetResponse = await env.ASSETS.fetch(new Request(assetUrl, {
+        method: request.method,
+        headers: request.headers,
+    }));
+    if (![200, 206, 304].includes(assetResponse.status)) {
+        return json({ error: 'Asset unavailable' }, 502, cors);
+    }
 
     const cacheSeconds = positiveInteger(env.ASSET_CACHE_SECONDS, 86400);
     const headers = new Headers(assetResponse.headers);
@@ -54,9 +63,12 @@ async function serveAsset(request, env, collectionKey, filename, cors) {
     headers.set('Cache-Control', `public, max-age=${cacheSeconds}, s-maxage=${cacheSeconds}`);
     headers.set('X-Content-Type-Options', 'nosniff');
     Object.entries(cors).forEach(([name, value]) => headers.set(name, value));
-    const response = new Response(assetResponse.body, { status: 200, headers });
+    const response = new Response(request.method === 'HEAD' ? null : assetResponse.body, {
+        status: assetResponse.status,
+        headers,
+    });
 
-    return request.method === 'HEAD' ? new Response(null, response) : response;
+    return response;
 }
 
 function json(payload, status, cors, extraHeaders = {}, method = 'GET') {

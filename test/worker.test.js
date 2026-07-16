@@ -10,6 +10,7 @@ test('serves a website-compatible manifest', async () => {
     assert.equal(response.headers.get('Access-Control-Allow-Origin'), '*');
     assert.equal(manifest.sections.eirna.count, 3);
     assert.deepEqual(manifest.sections.eirna.files, ['1.gif', '2.gif', '3.gif']);
+    assert.equal(manifest.sections.eirna.fileVersions[0], '931193f504a9');
     assert.equal(manifest.sections.eirna.cdnBase, 'https://tray.example/v1/assets/eirna/');
 });
 
@@ -45,6 +46,11 @@ test('handles preflight and unsupported methods', async () => {
     assert.equal(options.status, 204);
     assert.equal(post.status, 405);
     assert.equal(post.headers.get('Allow'), 'GET, HEAD, OPTIONS');
+});
+
+test('returns a client error for malformed asset paths', async () => {
+    const response = await worker.fetch(new Request('https://tray.example/v1/assets/eirna/%E0%A4%A'));
+    assert.equal(response.status, 400);
 });
 
 test('allows direct and third-party access to public routes', async () => {

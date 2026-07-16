@@ -43,10 +43,7 @@ for (const repository of repositories) {
         hashes[filename] = createHash('sha256').update(await readFile(source)).digest('hex');
     }
 
-    const unchanged = previous
-        && JSON.stringify(previous.files) === JSON.stringify(files)
-        && JSON.stringify(oldAssetLock.collections[repository.name]?.files || {}) === JSON.stringify(hashes);
-    const collection = {
+    const collectionData = {
         key: repository.name,
         title: metadata.title || previous?.title || repository.name,
         author: metadata.author || previous?.author || repository.name,
@@ -54,13 +51,20 @@ for (const repository of repositories) {
             || `https://github.com/${githubOrganization}/${repository.name}`,
         branch: metadata.branch || previous?.branch || 'main',
         files,
-        updated: unchanged ? previous.updated : new Date().toISOString(),
     };
 
     for (const field of ['authorBio', 'authorAvatar', 'authorUrl', 'authorTag', 'description']) {
-        const value = metadata[field] || previous?.[field];
-        if (value) collection[field] = value;
+        const value = Object.hasOwn(metadata, field) ? metadata[field] : previous?.[field];
+        if (value) collectionData[field] = value;
     }
+
+    const unchanged = previous
+        && JSON.stringify(withoutUpdated(previous)) === JSON.stringify(collectionData)
+        && JSON.stringify(oldAssetLock.collections[repository.name]?.files || {}) === JSON.stringify(hashes);
+    const collection = {
+        ...collectionData,
+        updated: unchanged ? previous.updated : new Date().toISOString(),
+    };
 
     collections.push(collection);
     assetCollections[collection.key] = { files: hashes };
@@ -71,9 +75,7 @@ if (collections.length === 0) {
     throw new Error(`No sibling image repositories containing GIF files were found in ${repositoryRoot}`);
 }
 
-const comparableOld = oldCatalog.collections.map(withoutUpdated);
-const comparableNew = collections.map(withoutUpdated);
-const catalogChanged = JSON.stringify(comparableOld) !== JSON.stringify(comparableNew);
+const catalogChanged = JSON.stringify(oldCatalog.collections) !== JSON.stringify(collections);
 const catalog = {
     version: oldCatalog.version || '1.0.0',
     updated: catalogChanged ? new Date().toISOString() : oldCatalog.updated,
