@@ -1,6 +1,7 @@
 import { createManifest, findCollection } from './catalog.js';
 
 const JSON_CACHE_CONTROL = 'public, max-age=300, s-maxage=3600';
+const ASSET_CACHE_VERSION = '2';
 
 export default {
     async fetch(request, env = {}, context = {}) {
@@ -42,7 +43,9 @@ async function serveAsset(request, env, context, collectionKey, filename, cors) 
     }
 
     const cache = typeof caches === 'undefined' ? null : caches.default;
-    const cacheKey = new Request(request.url, { method: 'GET' });
+    const cacheUrl = new URL(request.url);
+    cacheUrl.searchParams.set('__cache', ASSET_CACHE_VERSION);
+    const cacheKey = new Request(cacheUrl, { method: 'GET' });
     if (cache) {
         const cached = await cache.match(cacheKey);
         if (cached) return withCors(cached, cors, request.method);
@@ -73,7 +76,7 @@ async function serveAsset(request, env, context, collectionKey, filename, cors) 
 
     const cacheSeconds = positiveInteger(env.ASSET_CACHE_SECONDS, 86400);
     const headers = new Headers({
-        'Content-Type': upstream.headers.get('Content-Type') || 'image/gif',
+        'Content-Type': contentTypeFor(filename),
         'Cache-Control': `public, max-age=${cacheSeconds}, s-maxage=${cacheSeconds}`,
         'X-Content-Type-Options': 'nosniff',
         ...cors,
@@ -113,4 +116,16 @@ function withCors(response, cors, method) {
 function positiveInteger(value, fallback) {
     const number = Number.parseInt(value, 10);
     return Number.isInteger(number) && number > 0 ? number : fallback;
+}
+
+function contentTypeFor(filename) {
+    const extension = filename.split('.').at(-1)?.toLowerCase();
+    return {
+        gif: 'image/gif',
+        webp: 'image/webp',
+        png: 'image/png',
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        avif: 'image/avif',
+    }[extension] || 'application/octet-stream';
 }

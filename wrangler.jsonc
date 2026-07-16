@@ -7,7 +7,7 @@
     "enabled": true
   },
   "vars": {
-    "ALLOWED_ORIGIN": "*",
+    "ALLOWED_ORIGIN": "https://cati.me",
     "ASSET_CACHE_SECONDS": "86400"
   }
 }

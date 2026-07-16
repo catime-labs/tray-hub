@@ -46,7 +46,8 @@ read-only Contents permission before the first deployment:
 npx wrangler secret put GITHUB_TOKEN
 ```
 
-Then point the Catime website at `https://<worker-domain>/sections.json`.
+Bind the Worker to the custom domain `tray.cati.me`, then point the Catime
+website at `https://tray.cati.me/sections.json`.
 
 The `Sync catalog` workflow only checks registered image repositories hourly,
 commits catalog changes, and runs tests. It never deploys to Cloudflare. Add

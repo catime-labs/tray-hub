@@ -20,7 +20,7 @@ test('proxies only registered assets', async () => {
         UPSTREAM_FETCH: async (url, init) => {
             requestedUrl = url;
             assert.equal(init.headers.Authorization, 'Bearer test-token');
-            return new Response('gif-data', { headers: { 'Content-Type': 'image/gif' } });
+            return new Response('gif-data', { headers: { 'Content-Type': 'application/vnd.github.raw+json' } });
         },
     };
     const response = await worker.fetch(new Request('https://tray.example/v1/assets/eirna/2.gif'), env);
