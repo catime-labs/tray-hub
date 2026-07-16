@@ -28,12 +28,12 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           path: tray-hub
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           cache-dependency-path: tray-hub/package-lock.json
       - name: Install dependencies
@@ -53,33 +53,51 @@ jobs:
       - name: Test Worker
         run: npm test
         working-directory: tray-hub
+      - name: Verify staged GIF files
+        working-directory: tray-hub
+        shell: bash
+        run: |
+          count=$(find public/assets -type f -iname '*.gif' | wc -l)
+          if [[ "$count" -eq 0 ]]; then
+            echo "No staged GIF files found."
+            exit 1
+          fi
+          echo "Verified $count staged GIF files."
       - name: Check for changes
         id: changes
         working-directory: tray-hub
         shell: bash
         run: |
-          if [[ "${{ github.event_name }}" != "schedule" ]]; then
+          signature=$(
+            {
+              find src scripts test .github/workflows -type f -print0
+              printf '%s\0' package.json package-lock.json wrangler.jsonc data/collections.json data/assets-lock.json
+            } | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1
+          )
+          deployed=$(cat data/deployment-signature.txt 2>/dev/null || true)
+          echo "signature=$signature" >> "$GITHUB_OUTPUT"
+          if [[ "$signature" != "$deployed" ]]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
-          elif [[ -z "$(git status --porcelain -- data/collections.json data/assets-lock.json)" ]]; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
           else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
       - name: Deploy to Cloudflare
         if: steps.changes.outputs.changed == 'true'
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: tray-hub
-          command: deploy
-      - name: Commit generated catalog
+        working-directory: tray-hub
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Commit deployment state
         if: steps.changes.outputs.changed == 'true'
         working-directory: tray-hub
+        env:
+          DEPLOYMENT_SIGNATURE: ${{ steps.changes.outputs.signature }}
         run: |
-          if [[ -z "$(git status --porcelain -- data/collections.json data/assets-lock.json)" ]]; then exit 0; fi
+          echo "$DEPLOYMENT_SIGNATURE" > data/deployment-signature.txt
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add data/collections.json data/assets-lock.json
-          git commit -m "chore: update tray asset catalog"
+          git add data/collections.json data/assets-lock.json data/deployment-signature.txt
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "chore: record tray deployment"
           git push

@@ -83,6 +83,9 @@ public repositories in `catime-labs` that contain GIF files, stages them, and
 compares `data/assets-lock.json`, which stores a SHA-256 hash for every image.
 It deploys only when files were added, removed, renamed, or their contents
 changed. New public GIF repositories are discovered without editing tray-hub.
+The workflow also hashes Worker code and deployment configuration. A successful
+release records `data/deployment-signature.txt`; failed releases do not update
+that signature, so the next scheduled check retries automatically.
 
 Configure these tray-hub repository secrets before enabling the workflow:
 
