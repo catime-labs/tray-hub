@@ -1,0 +1,19 @@
+{
+  "version": "1.0.0",
+  "updated": "2026-07-16T00:00:00.000Z",
+  "collections": [
+    {
+      "key": "eirna",
+      "title": "eirna",
+      "author": "eirna",
+      "repository": "https://github.com/catime-labs/eirna",
+      "branch": "main",
+      "files": [
+        "1.gif",
+        "2.gif",
+        "3.gif"
+      ],
+      "updated": "2026-07-16T00:00:00.000Z"
+    }
+  ]
+}
