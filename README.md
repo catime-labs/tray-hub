@@ -11,8 +11,14 @@ Cloudflare Worker registry and static asset service for Catime tray animations.
 - `GET /health` returns the service status.
 
 Only files listed in `data/collections.json` are staged and served. Production
-requests never fetch images from GitHub; GitHub is only used during staging
-when a local sibling image repository is unavailable.
+requests never fetch images from GitHub, and deployment copies image bytes only
+from the checked-out sibling repositories.
+
+Manifest and asset routes require either an `Origin` or `Referer` matching
+`ALLOWED_ORIGIN` (`https://cati.me` in production). This combines CORS with
+basic hotlink protection. `/health` remains public for monitoring. Request
+headers can be spoofed, so this prevents ordinary browser access and hotlinking
+rather than making public browser-delivered files cryptographically private.
 
 ## Local development
 

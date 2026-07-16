@@ -15,6 +15,10 @@ export default {
             return json({ error: 'Method not allowed' }, 405, cors, { Allow: 'GET, HEAD, OPTIONS' });
         }
 
+        if (isProtectedRoute(url.pathname) && !isAllowedSiteRequest(request, env.ALLOWED_ORIGIN || '*')) {
+            return json({ error: 'Forbidden' }, 403, cors);
+        }
+
         if (url.pathname === '/' || url.pathname === '/health') {
             const payload = url.pathname === '/health'
                 ? { status: 'ok' }
@@ -82,6 +86,28 @@ function corsHeaders(origin) {
 function positiveInteger(value, fallback) {
     const number = Number.parseInt(value, 10);
     return Number.isInteger(number) && number > 0 ? number : fallback;
+}
+
+function isProtectedRoute(pathname) {
+    return pathname === '/sections.json'
+        || pathname === '/v1/collections'
+        || pathname.startsWith('/v1/assets/');
+}
+
+function isAllowedSiteRequest(request, allowedOrigin) {
+    if (allowedOrigin === '*') return true;
+
+    const origin = request.headers.get('Origin');
+    if (origin) return origin === allowedOrigin;
+
+    const referer = request.headers.get('Referer');
+    if (!referer) return false;
+
+    try {
+        return new URL(referer).origin === allowedOrigin;
+    } catch {
+        return false;
+    }
 }
 
 function contentTypeFor(filename) {
