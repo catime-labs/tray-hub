@@ -3,13 +3,11 @@ import test from 'node:test';
 import worker from '../src/index.js';
 
 test('serves a website-compatible manifest', async () => {
-    const response = await worker.fetch(new Request('https://tray.example/sections.json', {
-        headers: { Origin: 'https://cati.me' },
-    }), { ALLOWED_ORIGIN: 'https://cati.me' });
+    const response = await worker.fetch(new Request('https://tray.example/sections.json'));
     const manifest = await response.json();
 
     assert.equal(response.status, 200);
-    assert.equal(response.headers.get('Access-Control-Allow-Origin'), 'https://cati.me');
+    assert.equal(response.headers.get('Access-Control-Allow-Origin'), '*');
     assert.equal(manifest.sections.eirna.count, 3);
     assert.deepEqual(manifest.sections.eirna.files, ['1.gif', '2.gif', '3.gif']);
     assert.equal(manifest.sections.eirna.cdnBase, 'https://tray.example/v1/assets/eirna/');
@@ -25,9 +23,7 @@ test('serves registered assets from the Cloudflare static binding', async () => 
             },
         },
     };
-    const response = await worker.fetch(new Request('https://tray.example/v1/assets/eirna/2.gif', {
-        headers: { Referer: 'https://cati.me/tray-animations/' },
-    }), { ...env, ALLOWED_ORIGIN: 'https://cati.me' });
+    const response = await worker.fetch(new Request('https://tray.example/v1/assets/eirna/2.gif'), env);
 
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('Content-Type'), 'image/gif');
@@ -51,15 +47,15 @@ test('handles preflight and unsupported methods', async () => {
     assert.equal(post.headers.get('Allow'), 'GET, HEAD, OPTIONS');
 });
 
-test('blocks direct and third-party access to protected routes', async () => {
-    const env = { ALLOWED_ORIGIN: 'https://cati.me' };
+test('allows direct and third-party access to public routes', async () => {
+    const env = { ALLOWED_ORIGIN: '*' };
     const direct = await worker.fetch(new Request('https://tray.example/sections.json'), env);
     const thirdParty = await worker.fetch(new Request('https://tray.example/sections.json', {
         headers: { Origin: 'https://example.com' },
     }), env);
     const health = await worker.fetch(new Request('https://tray.example/health'), env);
 
-    assert.equal(direct.status, 403);
-    assert.equal(thirdParty.status, 403);
+    assert.equal(direct.status, 200);
+    assert.equal(thirdParty.status, 200);
     assert.equal(health.status, 200);
 });

@@ -14,11 +14,8 @@ Only files listed in `data/collections.json` are staged and served. Production
 requests never fetch images from GitHub, and deployment copies image bytes only
 from the checked-out sibling repositories.
 
-Manifest and asset routes require either an `Origin` or `Referer` matching
-`ALLOWED_ORIGIN` (`https://cati.me` in production). This combines CORS with
-basic hotlink protection. `/health` remains public for monitoring. Request
-headers can be spoofed, so this prevents ordinary browser access and hotlinking
-rather than making public browser-delivered files cryptographically private.
+Manifest and asset routes are public and send permissive CORS headers so they
+can be used by the production website, local development, and other clients.
 
 ## Local development
 
@@ -95,7 +92,3 @@ Configure these tray-hub repository secrets before enabling the workflow:
 The workflow can also be started manually or through a
 `tray-assets-updated` repository dispatch event. Scheduled checks require no
 secret for public GitHub repositories.
-
-For private repositories, the token must be authorized for the `catime-labs`
-organization. GitHub returns `404` for private repositories when the token is
-missing or lacks access.
