@@ -1,7 +1,6 @@
 import { createManifest, findCollection } from './catalog.js';
 
 const JSON_CACHE_CONTROL = 'public, max-age=300, s-maxage=3600';
-const ASSET_CACHE_VERSION = '2';
 
 export default {
     async fetch(request, env = {}, context = {}) {
@@ -29,61 +28,34 @@ export default {
 
         const match = url.pathname.match(/^\/v1\/assets\/([^/]+)\/(.+)$/);
         if (match) {
-            return serveAsset(request, env, context, decodeURIComponent(match[1]), decodeURIComponent(match[2]), cors);
+            return serveAsset(request, env, decodeURIComponent(match[1]), decodeURIComponent(match[2]), cors);
         }
 
         return json({ error: 'Not found' }, 404, cors);
     },
 };
 
-async function serveAsset(request, env, context, collectionKey, filename, cors) {
+async function serveAsset(request, env, collectionKey, filename, cors) {
     const collection = findCollection(collectionKey);
     if (!collection || !collection.files.includes(filename)) {
         return json({ error: 'Asset not found' }, 404, cors);
     }
 
-    const cache = typeof caches === 'undefined' ? null : caches.default;
-    const cacheUrl = new URL(request.url);
-    cacheUrl.searchParams.set('__cache', ASSET_CACHE_VERSION);
-    const cacheKey = new Request(cacheUrl, { method: 'GET' });
-    if (cache) {
-        const cached = await cache.match(cacheKey);
-        if (cached) return withCors(cached, cors, request.method);
-    }
+    if (!env.ASSETS) return json({ error: 'Static assets are not configured' }, 503, cors);
 
-    const repository = new URL(collection.repository);
-    const [owner, repo] = repository.pathname.split('/').filter(Boolean);
-    const encodedPath = filename.split('/').map(encodeURIComponent).join('/');
-    const upstreamUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${encodedPath}?ref=${encodeURIComponent(collection.branch)}`;
-    const upstreamFetch = env.UPSTREAM_FETCH || fetch;
-    const upstreamHeaders = {
-        Accept: 'application/vnd.github.raw+json',
-        'User-Agent': 'catime-labs/tray-hub',
-        'X-GitHub-Api-Version': '2022-11-28',
-    };
-    if (env.GITHUB_TOKEN) upstreamHeaders.Authorization = `Bearer ${env.GITHUB_TOKEN}`;
-
-    let upstream;
-    try {
-        upstream = await upstreamFetch(upstreamUrl, { headers: upstreamHeaders });
-    } catch {
-        return json({ error: 'Upstream asset unavailable' }, 502, cors);
-    }
-
-    if (!upstream.ok) {
-        return json({ error: 'Upstream asset unavailable' }, 502, cors);
-    }
+    const assetUrl = new URL(request.url);
+    assetUrl.pathname = `/assets/${encodeURIComponent(collection.key)}/${filename.split('/').map(encodeURIComponent).join('/')}`;
+    const assetResponse = await env.ASSETS.fetch(new Request(assetUrl, { method: 'GET' }));
+    if (!assetResponse.ok) return json({ error: 'Asset unavailable' }, 502, cors);
 
     const cacheSeconds = positiveInteger(env.ASSET_CACHE_SECONDS, 86400);
-    const headers = new Headers({
-        'Content-Type': contentTypeFor(filename),
-        'Cache-Control': `public, max-age=${cacheSeconds}, s-maxage=${cacheSeconds}`,
-        'X-Content-Type-Options': 'nosniff',
-        ...cors,
-    });
-    const response = new Response(upstream.body, { status: 200, headers });
+    const headers = new Headers(assetResponse.headers);
+    headers.set('Content-Type', contentTypeFor(filename));
+    headers.set('Cache-Control', `public, max-age=${cacheSeconds}, s-maxage=${cacheSeconds}`);
+    headers.set('X-Content-Type-Options', 'nosniff');
+    Object.entries(cors).forEach(([name, value]) => headers.set(name, value));
+    const response = new Response(assetResponse.body, { status: 200, headers });
 
-    if (cache && context.waitUntil) context.waitUntil(cache.put(cacheKey, response.clone()));
     return request.method === 'HEAD' ? new Response(null, response) : response;
 }
 
@@ -105,12 +77,6 @@ function corsHeaders(origin) {
         'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type',
     };
-}
-
-function withCors(response, cors, method) {
-    const headers = new Headers(response.headers);
-    Object.entries(cors).forEach(([name, value]) => headers.set(name, value));
-    return new Response(method === 'HEAD' ? null : response.body, { status: response.status, headers });
 }
 
 function positiveInteger(value, fallback) {

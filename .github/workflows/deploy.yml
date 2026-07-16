@@ -1,0 +1,85 @@
+name: Check assets and deploy
+
+on:
+  schedule:
+    - cron: '17,47 * * * *'
+  workflow_dispatch:
+  repository_dispatch:
+    types: [tray-assets-updated]
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy.yml'
+      - 'package-lock.json'
+      - 'package.json'
+      - 'scripts/**'
+      - 'src/**'
+      - 'test/**'
+      - 'wrangler.jsonc'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tray-hub-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tray-hub
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tray-hub/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+        working-directory: tray-hub
+      - name: Discover image repositories
+        run: node scripts/checkout-image-repos.mjs
+        working-directory: tray-hub
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TRAY_ASSET_ROOT: ${{ github.workspace }}
+      - name: Stage and validate assets
+        run: npm run stage
+        working-directory: tray-hub
+        env:
+          TRAY_ASSET_ROOT: ${{ github.workspace }}
+      - name: Test Worker
+        run: npm test
+        working-directory: tray-hub
+      - name: Check for changes
+        id: changes
+        working-directory: tray-hub
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" != "schedule" ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          elif [[ -z "$(git status --porcelain -- data/collections.json data/assets-lock.json)" ]]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Deploy to Cloudflare
+        if: steps.changes.outputs.changed == 'true'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: tray-hub
+          command: deploy
+      - name: Commit generated catalog
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: tray-hub
+        run: |
+          if [[ -z "$(git status --porcelain -- data/collections.json data/assets-lock.json)" ]]; then exit 0; fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add data/collections.json data/assets-lock.json
+          git commit -m "chore: update tray asset catalog"
+          git push
