@@ -1,0 +1,78 @@
+name: Sync tray assets
+
+on:
+  schedule:
+    - cron: '17,47 * * * *'
+  workflow_dispatch:
+  repository_dispatch:
+    types: [tray-assets-updated]
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/sync.yml'
+      - 'package-lock.json'
+      - 'package.json'
+      - 'scripts/checkout-catalog-repos.mjs'
+      - 'scripts/checkout-image-repos.mjs'
+      - 'scripts/stage-assets.mjs'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tray-hub-asset-sync
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: tray-hub
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: tray-hub/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+        working-directory: tray-hub
+      - name: Discover image repositories
+        run: node scripts/checkout-image-repos.mjs
+        working-directory: tray-hub
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TRAY_ASSET_ROOT: ${{ github.workspace }}
+      - name: Stage and validate assets
+        run: npm run stage
+        working-directory: tray-hub
+        env:
+          TRAY_ASSET_ROOT: ${{ github.workspace }}
+      - name: Test Worker
+        run: npm test
+        working-directory: tray-hub
+      - name: Verify staged GIF files
+        working-directory: tray-hub
+        shell: bash
+        run: |
+          count=$(find public/assets -type f -iname '*.gif' | wc -l)
+          if [[ "$count" -eq 0 ]]; then
+            echo "No staged GIF files found."
+            exit 1
+          fi
+          echo "Verified $count staged GIF files."
+      - name: Commit updated asset catalog
+        working-directory: tray-hub
+        shell: bash
+        run: |
+          git add data/collections.json data/assets-lock.json
+          if git diff --cached --quiet; then
+            echo "Asset catalog is already current."
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "chore: sync tray assets"
+          git pull --rebase origin main
+          git push origin HEAD:main

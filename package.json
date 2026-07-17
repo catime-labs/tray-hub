@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "stage": "node scripts/stage-assets.mjs",
-    "dev": "npm run stage && wrangler dev",
-    "deploy": "npm run stage && wrangler deploy",
+    "build:assets": "node scripts/checkout-catalog-repos.mjs && npm run stage",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
     "verify:deployment": "node scripts/verify-deployment.mjs",
     "test": "node --test"
   },

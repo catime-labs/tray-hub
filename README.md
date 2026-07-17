@@ -60,7 +60,13 @@ name or author differs from the repository name:
 
 ## Cloudflare deployment
 
-Deployment is manual. After reviewing the catalog and tests, run:
+Connect the public `tray-hub` repository to Cloudflare Workers Builds. The
+deploy command can remain `npx wrangler deploy`; `wrangler.jsonc` runs the
+asset build automatically before every deployment. That build checks out the
+public image repositories recorded in the catalog next to `tray-hub`, and
+copies all GIF files into Cloudflare Static Assets.
+
+For a manual deployment from a local sibling-repository workspace, run:
 
 ```bash
 npm run deploy
@@ -70,28 +76,26 @@ Bind the Worker to the custom domain `tray.cati.me`, then point the Catime
 website at `https://tray.cati.me/sections.json`.
 
 The deploy command stages every registered GIF and uploads it together with the
-Worker. No GitHub token or runtime GitHub access is required for public image
-repositories.
+Worker. No custom GitHub token is required for public image repositories, and
+the deployed Worker never fetches images from GitHub at runtime.
 
 Updating or adding a sibling image repository is picked up automatically the
-next time `npm run deploy` is run. The automatic workflow described below can
-also detect and deploy those changes without a manual release.
+next time `npm run deploy` is run. The automatic workflow described below also
+detects those changes and updates `tray-hub`, which triggers the connected
+Cloudflare Workers build.
 
-## Automatic checks and deployment
+## Automatic asset checks
 
-The `Check assets and deploy` workflow runs every 30 minutes. It discovers all
-public repositories in `catime-labs` that contain GIF files, stages them, and
-compares `data/assets-lock.json`, which stores a SHA-256 hash for every image.
-It deploys only when files were added, removed, renamed, or their contents
-changed. New public GIF repositories are discovered without editing tray-hub.
-The workflow also hashes Worker code and deployment configuration. A successful
-release records `data/deployment-signature.txt`; failed releases do not update
-that signature, so the next scheduled check retries automatically.
+The `Sync tray assets` workflow runs every 30 minutes. It discovers all public
+repositories in `catime-labs` that contain GIF files, stages them, and compares
+`data/assets-lock.json`, which stores a SHA-256 hash for every image. When a
+file is added, removed, renamed, or changed, the workflow commits the updated
+catalog and lock file back to `tray-hub`. That Git push then lets Cloudflare's
+Git integration perform the deployment.
 
-Configure these tray-hub repository secrets before enabling the workflow:
-
-- `CLOUDFLARE_API_TOKEN`
-- `CLOUDFLARE_ACCOUNT_ID`
+The Action does not call Cloudflare and requires no Cloudflare API token.
+`GITHUB_TOKEN` is supplied automatically by GitHub. New public GIF repositories
+are discovered without editing `tray-hub`.
 
 The workflow can also be started manually or through a
 `tray-assets-updated` repository dispatch event. Scheduled checks require no
