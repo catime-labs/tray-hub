@@ -1,6 +1,6 @@
 import { createManifest, findCollection } from './catalog.js';
 
-const JSON_CACHE_CONTROL = 'public, max-age=300, s-maxage=3600';
+const JSON_CACHE_CONTROL = 'public, max-age=300, s-maxage=3600, stale-while-revalidate=86400, stale-if-error=604800';
 
 export default {
     async fetch(request, env = {}, context = {}) {

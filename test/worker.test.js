@@ -8,6 +8,7 @@ test('serves a website-compatible manifest', async () => {
 
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('Access-Control-Allow-Origin'), '*');
+    assert.match(response.headers.get('Cache-Control'), /stale-while-revalidate=86400/);
     assert.equal(manifest.sections.eirna.count, 3);
     assert.deepEqual(manifest.sections.eirna.files, ['1.gif', '2.gif', '3.gif']);
     assert.match(manifest.sections.eirna.fileVersions[0], /^[a-f0-9]{12}$/);
