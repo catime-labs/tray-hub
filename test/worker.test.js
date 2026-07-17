@@ -11,30 +11,18 @@ test('serves a website-compatible manifest', async () => {
     assert.equal(manifest.sections.eirna.count, 3);
     assert.deepEqual(manifest.sections.eirna.files, ['1.gif', '2.gif', '3.gif']);
     assert.equal(manifest.sections.eirna.fileVersions[0], '931193f504a9');
-    assert.equal(manifest.sections.eirna.cdnBase, 'https://tray.example/v1/assets/eirna/');
+    assert.equal(manifest.sections.eirna.cdnBase, 'https://tray.example/assets/eirna/');
 });
 
-test('serves registered assets from the Cloudflare static binding', async () => {
-    let requestedUrl;
-    const env = {
-        ASSETS: {
-            fetch: async request => {
-                requestedUrl = request.url;
-                return new Response('gif-data', { headers: { 'Content-Type': 'application/octet-stream' } });
-            },
-        },
-    };
-    const response = await worker.fetch(new Request('https://tray.example/v1/assets/eirna/2.gif'), env);
+test('redirects registered legacy asset routes to static assets', async () => {
+    const response = await worker.fetch(new Request('https://tray.example/v1/assets/eirna/2.gif?v=abc'));
 
-    assert.equal(response.status, 200);
-    assert.equal(response.headers.get('Content-Type'), 'image/gif');
-    assert.equal(await response.text(), 'gif-data');
-    assert.equal(requestedUrl, 'https://tray.example/assets/eirna/2.gif');
+    assert.equal(response.status, 307);
+    assert.equal(response.headers.get('Location'), 'https://tray.example/assets/eirna/2.gif?v=abc');
 });
 
-test('rejects unknown assets without reading static storage', async () => {
-    const env = { ASSETS: { fetch: () => assert.fail('static binding must not run') } };
-    const response = await worker.fetch(new Request('https://tray.example/v1/assets/eirna/missing.gif'), env);
+test('rejects unknown assets', async () => {
+    const response = await worker.fetch(new Request('https://tray.example/v1/assets/eirna/missing.gif'));
 
     assert.equal(response.status, 404);
 });

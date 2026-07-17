@@ -6,8 +6,9 @@ Cloudflare Worker registry and static asset service for Catime tray animations.
 
 - `GET /sections.json` returns the website-compatible collection manifest.
 - `GET /v1/collections` is an alias for the manifest.
-- `GET /v1/assets/:collection/:file` serves a registered GIF from Cloudflare
-  Static Assets.
+- `GET /assets/:collection/:file` serves a GIF directly from Cloudflare Static
+  Assets.
+- `GET /v1/assets/:collection/:file` redirects legacy URLs to the static asset.
 - `GET /health` returns the service status.
 
 Only files listed in `data/collections.json` are staged and served. Production

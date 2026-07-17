@@ -19,7 +19,7 @@ export function createManifest(origin) {
             description: collection.description || '',
             repository: collection.repository,
             repositoryName: repositoryName(collection.repository),
-            cdnBase: `${origin}/v1/assets/${encodeURIComponent(collection.key)}/`,
+            cdnBase: `${origin}/assets/${encodeURIComponent(collection.key)}/`,
             files: collection.files,
             fileVersions: collection.files.map(filename =>
                 assetLock.collections[collection.key]?.files[filename]?.slice(0, 12) || ''),

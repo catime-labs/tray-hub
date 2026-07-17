@@ -29,7 +29,7 @@ export default {
         const match = url.pathname.match(/^\/v1\/assets\/([^/]+)\/(.+)$/);
         if (match) {
             try {
-                return serveAsset(request, env, decodeURIComponent(match[1]), decodeURIComponent(match[2]), cors);
+                return redirectAsset(url, decodeURIComponent(match[1]), decodeURIComponent(match[2]), cors);
             } catch {
                 return json({ error: 'Invalid asset path' }, 400, cors);
             }
@@ -39,36 +39,22 @@ export default {
     },
 };
 
-async function serveAsset(request, env, collectionKey, filename, cors) {
+function redirectAsset(url, collectionKey, filename, cors) {
     const collection = findCollection(collectionKey);
     if (!collection || !collection.files.includes(filename)) {
         return json({ error: 'Asset not found' }, 404, cors);
     }
 
-    if (!env.ASSETS) return json({ error: 'Static assets are not configured' }, 503, cors);
-
-    const assetUrl = new URL(request.url);
+    const assetUrl = new URL(url);
     assetUrl.pathname = `/assets/${encodeURIComponent(collection.key)}/${filename.split('/').map(encodeURIComponent).join('/')}`;
-    const assetResponse = await env.ASSETS.fetch(new Request(assetUrl, {
-        method: request.method,
-        headers: request.headers,
-    }));
-    if (![200, 206, 304].includes(assetResponse.status)) {
-        return json({ error: 'Asset unavailable' }, 502, cors);
-    }
-
-    const cacheSeconds = positiveInteger(env.ASSET_CACHE_SECONDS, 86400);
-    const headers = new Headers(assetResponse.headers);
-    headers.set('Content-Type', contentTypeFor(filename));
-    headers.set('Cache-Control', `public, max-age=${cacheSeconds}, s-maxage=${cacheSeconds}`);
-    headers.set('X-Content-Type-Options', 'nosniff');
-    Object.entries(cors).forEach(([name, value]) => headers.set(name, value));
-    const response = new Response(request.method === 'HEAD' ? null : assetResponse.body, {
-        status: assetResponse.status,
-        headers,
+    return new Response(null, {
+        status: 307,
+        headers: {
+            Location: assetUrl.toString(),
+            'Cache-Control': 'public, max-age=300',
+            ...cors,
+        },
     });
-
-    return response;
 }
 
 function json(payload, status, cors, extraHeaders = {}, method = 'GET') {
@@ -89,21 +75,4 @@ function corsHeaders(origin) {
         'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type',
     };
-}
-
-function positiveInteger(value, fallback) {
-    const number = Number.parseInt(value, 10);
-    return Number.isInteger(number) && number > 0 ? number : fallback;
-}
-
-function contentTypeFor(filename) {
-    const extension = filename.split('.').at(-1)?.toLowerCase();
-    return {
-        gif: 'image/gif',
-        webp: 'image/webp',
-        png: 'image/png',
-        jpg: 'image/jpeg',
-        jpeg: 'image/jpeg',
-        avif: 'image/avif',
-    }[extension] || 'application/octet-stream';
 }
