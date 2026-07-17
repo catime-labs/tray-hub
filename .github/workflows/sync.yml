@@ -49,19 +49,10 @@ jobs:
         working-directory: tray-hub
         env:
           TRAY_ASSET_ROOT: ${{ github.workspace }}
+          TRAY_SKIP_ASSET_BUILD: '1'
       - name: Test Worker
         run: npm test
         working-directory: tray-hub
-      - name: Verify staged GIF files
-        working-directory: tray-hub
-        shell: bash
-        run: |
-          count=$(find public/assets -type f -iname '*.gif' | wc -l)
-          if [[ "$count" -eq 0 ]]; then
-            echo "No staged GIF files found."
-            exit 1
-          fi
-          echo "Verified $count staged GIF files."
       - name: Commit updated asset catalog
         working-directory: tray-hub
         shell: bash

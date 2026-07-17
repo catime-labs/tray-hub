@@ -2,4 +2,5 @@ node_modules/
 .wrangler/
 .dev.vars
 coverage/
+.cache/
 public/assets/

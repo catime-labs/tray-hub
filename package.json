@@ -12,6 +12,9 @@
     "test": "node --test"
   },
   "devDependencies": {
+    "decode-ico": "^0.4.1",
+    "gifsicle-wasm": "^1.96.4",
+    "sharp": "^0.35.3",
     "wrangler": "^4.0.0"
   }
 }

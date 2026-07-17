@@ -20,7 +20,7 @@ let discovered = 0;
 
 for (const repository of repositories) {
     if (repository.name === 'tray-hub' || repository.archived || repository.fork) continue;
-    if (!await containsGif(repository)) continue;
+    if (!await containsTrayAsset(repository)) continue;
 
     const destination = resolve(destinationRoot, repository.name);
     await run('git', [
@@ -33,7 +33,7 @@ for (const repository of repositories) {
     discovered += 1;
 }
 
-if (discovered === 0) throw new Error(`No public GIF repositories found in ${organization}`);
+if (discovered === 0) throw new Error(`No public GIF, WebP, or ANI repositories found in ${organization}`);
 console.log(`Discovered ${discovered} image repositories.`);
 
 async function listRepositories() {
@@ -45,11 +45,11 @@ async function listRepositories() {
     }
 }
 
-async function containsGif(repository) {
+async function containsTrayAsset(repository) {
     const tree = await githubApi(
         `/repos/${repository.full_name}/git/trees/${encodeURIComponent(repository.default_branch)}?recursive=1`,
     );
-    return tree.tree.some(item => item.type === 'blob' && item.path.toLowerCase().endsWith('.gif'));
+    return tree.tree.some(item => item.type === 'blob' && /\.(?:ani|gif|webp)$/i.test(item.path));
 }
 
 async function githubApi(path) {

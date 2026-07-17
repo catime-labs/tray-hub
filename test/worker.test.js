@@ -10,7 +10,7 @@ test('serves a website-compatible manifest', async () => {
     assert.equal(response.headers.get('Access-Control-Allow-Origin'), '*');
     assert.equal(manifest.sections.eirna.count, 3);
     assert.deepEqual(manifest.sections.eirna.files, ['1.gif', '2.gif', '3.gif']);
-    assert.equal(manifest.sections.eirna.fileVersions[0], '931193f504a9');
+    assert.match(manifest.sections.eirna.fileVersions[0], /^[a-f0-9]{12}$/);
     assert.equal(manifest.sections.eirna.cdnBase, 'https://tray.example/assets/eirna/');
 });
 

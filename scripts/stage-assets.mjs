@@ -1,7 +1,13 @@
-import { access, copyFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { createHash } from 'node:crypto';
+import { access, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+    SUPPORTED_EXTENSIONS,
+    buildGif,
+    outputFilename,
+    sourceFingerprint,
+    validateSource,
+} from './asset-pipeline.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const catalogPath = resolve(root, 'data/collections.json');
@@ -10,10 +16,13 @@ const oldCatalog = JSON.parse(await readFile(catalogPath, 'utf8'));
 const oldAssetLock = await readJson(assetLockPath, { version: '1.0.0', collections: {} });
 const oldCollections = new Map(oldCatalog.collections.map(collection => [collection.key, collection]));
 const outputRoot = resolve(root, 'public/assets');
+const cacheRoot = resolve(root, '.cache/tray-assets');
 const repositoryRoot = process.env.TRAY_ASSET_ROOT
     ? resolve(process.env.TRAY_ASSET_ROOT)
     : resolve(root, '..');
 const githubOrganization = process.env.TRAY_GITHUB_ORG || 'catime-labs';
+const skipAssetBuild = process.env.TRAY_SKIP_ASSET_BUILD === '1';
+const conversionConcurrency = positiveInteger(process.env.TRAY_CONVERT_CONCURRENCY, 2);
 
 await rm(outputRoot, { recursive: true, force: true });
 await mkdir(outputRoot, { recursive: true });
@@ -26,23 +35,53 @@ const repositories = (await readdir(repositoryRoot, { withFileTypes: true }))
 
 const collections = [];
 const assetCollections = {};
+const buildStats = { cacheHits: 0, converted: 0, inputBytes: 0, outputBytes: 0 };
 
 for (const repository of repositories) {
-    const files = await findGifFiles(repository.path);
-    if (files.length === 0) continue;
+    const sourceFiles = await findSourceFiles(repository.path);
+    if (sourceFiles.length === 0) continue;
 
-    const previous = oldCollections.get(repository.name);
-    const metadata = await readMetadata(repository.path);
-    const hashes = {};
+    const assets = [];
+    const outputNames = new Map();
+    for (const sourceFilename of sourceFiles) {
+        const output = outputFilename(sourceFilename);
+        const collisionKey = output.toLowerCase();
+        if (outputNames.has(collisionKey)) {
+            throw new Error(`${repository.name} contains conflicting sources for ${output}: ${outputNames.get(collisionKey)} and ${sourceFilename}`);
+        }
+        outputNames.set(collisionKey, sourceFilename);
 
-    for (const filename of files) {
-        const source = resolve(repository.path, filename);
-        const destination = resolve(outputRoot, repository.name, filename);
-        await mkdir(dirname(destination), { recursive: true });
-        await copyFile(source, destination);
-        hashes[filename] = createHash('sha256').update(await readFile(source)).digest('hex');
+        const sourcePath = resolve(repository.path, sourceFilename);
+        const contents = await readFile(sourcePath);
+        await validateSource(sourceFilename, contents);
+        assets.push({
+            sourceFilename,
+            sourcePath,
+            outputFilename: output,
+            fingerprint: sourceFingerprint(sourceFilename, contents),
+        });
     }
 
+    if (!skipAssetBuild) {
+        await mapLimit(assets, conversionConcurrency, async asset => {
+            const result = await buildGif({
+                sourcePath: asset.sourcePath,
+                sourceFilename: asset.sourceFilename,
+                destination: resolve(outputRoot, repository.name, asset.outputFilename),
+                cacheRoot,
+                fingerprint: asset.fingerprint,
+            });
+            buildStats.cacheHits += Number(result.cacheHit);
+            buildStats.converted += Number(!result.cacheHit);
+            buildStats.inputBytes += result.inputBytes;
+            buildStats.outputBytes += result.outputBytes;
+        });
+    }
+
+    const files = assets.map(asset => asset.outputFilename);
+    const hashes = Object.fromEntries(assets.map(asset => [asset.outputFilename, asset.fingerprint]));
+    const previous = oldCollections.get(repository.name);
+    const metadata = await readMetadata(repository.path);
     const collectionData = {
         key: repository.name,
         title: metadata.title || previous?.title || repository.name,
@@ -68,11 +107,11 @@ for (const repository of repositories) {
 
     collections.push(collection);
     assetCollections[collection.key] = { files: hashes };
-    console.log(`${collection.key}: staged ${files.length} files`);
+    console.log(`${repository.name}: ${assets.length} supported sources -> ${files.length} GIF files`);
 }
 
 if (collections.length === 0) {
-    throw new Error(`No sibling image repositories containing GIF files were found in ${repositoryRoot}`);
+    throw new Error(`No sibling image repositories containing GIF, WebP, or ANI files were found in ${repositoryRoot}`);
 }
 
 const catalogChanged = JSON.stringify(oldCatalog.collections) !== JSON.stringify(collections);
@@ -91,9 +130,15 @@ const assetLock = {
 };
 await writeFile(assetLockPath, `${JSON.stringify(assetLock, null, 2)}\n`);
 
-console.log(`Catalog: ${collections.length} collections, ${collections.reduce((sum, item) => sum + item.files.length, 0)} GIF files`);
+const totalFiles = collections.reduce((sum, item) => sum + item.files.length, 0);
+if (skipAssetBuild) {
+    console.log(`Catalog: ${collections.length} collections, ${totalFiles} GIF outputs (conversion skipped)`);
+} else {
+    console.log(`Catalog: ${collections.length} collections, ${totalFiles} GIF outputs`);
+    console.log(`Asset build: ${buildStats.converted} generated, ${buildStats.cacheHits} cache hits, ${formatBytes(buildStats.inputBytes)} -> ${formatBytes(buildStats.outputBytes)}`);
+}
 
-async function findGifFiles(directory, current = directory) {
+async function findSourceFiles(directory, current = directory) {
     const files = [];
     const entries = await readdir(current, { withFileTypes: true });
 
@@ -101,8 +146,8 @@ async function findGifFiles(directory, current = directory) {
         if (entry.name === '.git' || entry.name === 'node_modules') continue;
         const path = resolve(current, entry.name);
         if (entry.isDirectory()) {
-            files.push(...await findGifFiles(directory, path));
-        } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.gif')) {
+            files.push(...await findSourceFiles(directory, path));
+        } else if (entry.isFile() && SUPPORTED_EXTENSIONS.has(extension(entry.name))) {
             files.push(relative(directory, path).split(sep).join('/'));
         }
     }
@@ -130,11 +175,39 @@ async function exists(path) {
     }
 }
 
+async function mapLimit(items, limit, mapper) {
+    let index = 0;
+    const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+        while (index < items.length) {
+            const current = index;
+            index += 1;
+            await mapper(items[current]);
+        }
+    });
+    await Promise.all(workers);
+}
+
 function withoutUpdated(collection) {
     const { updated, ...rest } = collection;
     return rest;
 }
 
+function extension(filename) {
+    const index = filename.lastIndexOf('.');
+    return index < 0 ? '' : filename.slice(index).toLowerCase();
+}
+
 function naturalCompare(left, right) {
     return left.localeCompare(right, 'en', { numeric: true, sensitivity: 'base' });
+}
+
+function positiveInteger(value, fallback) {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function formatBytes(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+    return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 }
