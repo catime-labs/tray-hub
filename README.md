@@ -2,6 +2,13 @@
 
 Cloudflare Worker registry and static asset service for Catime tray animations.
 
+## Author Information
+
+### eirna
+
+- Avatar: eirna.webp
+- [Bilibili](https://space.bilibili.com/1195508399)
+
 ## API
 
 - `GET /sections.json` returns the website-compatible collection manifest.
@@ -69,17 +76,12 @@ following optional environment variables tune the safety limits:
 - `TRAY_MAX_FRAME_PIXELS` (default `4194304`)
 - `TRAY_MAX_TOTAL_PIXELS` (default `12000000`)
 
-Metadata is optional. A repository can include `tray.json` when its display
-name or author differs from the repository name:
-
-```json
-{
-  "title": "Collection title",
-  "author": "Artist name",
-  "authorBio": "Optional introduction",
-  "authorAvatar": "https://example.com/avatar.webp"
-}
-```
+Author links and avatars are maintained centrally in the `Author Information`
+section at the top of this README. Each `###` heading must match an image
+repository name. Avatar source files live in the root `avatars/` directory.
+Avatar filenames are unrestricted; use any filename and image extension, then
+write only that filename after `Avatar:`. Image repositories only need to
+maintain their GIF, WebP, and ANI source files.
 
 ## Cloudflare deployment
 

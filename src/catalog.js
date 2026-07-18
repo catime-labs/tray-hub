@@ -13,9 +13,10 @@ export function createManifest(origin) {
             title: collection.title,
             author: collection.author,
             authorBio: collection.authorBio || '',
-            authorAvatar: collection.authorAvatar || '',
+            authorAvatar: resolveAvatar(origin, collection.authorAvatar),
             authorUrl: collection.authorUrl || '',
             authorTag: collection.authorTag || '',
+            authorLinks: collection.authorLinks || [],
             description: collection.description || '',
             repository: collection.repository,
             repositoryName: repositoryName(collection.repository),
@@ -32,6 +33,15 @@ export function createManifest(origin) {
         generated: catalog.updated,
         sections,
     };
+}
+
+function resolveAvatar(origin, avatar) {
+    if (!avatar) return '';
+    try {
+        return new URL(avatar, origin).toString();
+    } catch {
+        return '';
+    }
 }
 
 function repositoryName(repository) {

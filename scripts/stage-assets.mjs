@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { access, copyFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -8,6 +8,7 @@ import {
     sourceFingerprint,
     validateSource,
 } from './asset-pipeline.mjs';
+import { parseAuthorInfo } from './read-author-info.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const catalogPath = resolve(root, 'data/collections.json');
@@ -15,6 +16,7 @@ const assetLockPath = resolve(root, 'data/assets-lock.json');
 const oldCatalog = JSON.parse(await readFile(catalogPath, 'utf8'));
 const oldAssetLock = await readJson(assetLockPath, { version: '1.0.0', collections: {} });
 const oldCollections = new Map(oldCatalog.collections.map(collection => [collection.key, collection]));
+const authorInfo = parseAuthorInfo(await readFile(resolve(root, 'README.md'), 'utf8'));
 const outputRoot = resolve(root, 'public/assets');
 const cacheRoot = resolve(root, '.cache/tray-assets');
 const repositoryRoot = process.env.TRAY_ASSET_ROOT
@@ -82,15 +84,28 @@ for (const repository of repositories) {
     const hashes = Object.fromEntries(assets.map(asset => [asset.outputFilename, asset.fingerprint]));
     const previous = oldCollections.get(repository.name);
     const metadata = await readMetadata(repository.path);
+    const centrallyManagedAuthor = authorInfo[repository.name.toLowerCase()];
     const collectionData = {
         key: repository.name,
         title: metadata.title || previous?.title || repository.name,
-        author: metadata.author || previous?.author || repository.name,
+        author: centrallyManagedAuthor?.name || metadata.author || previous?.author || repository.name,
         repository: metadata.repository || previous?.repository
             || `https://github.com/${githubOrganization}/${repository.name}`,
         branch: metadata.branch || previous?.branch || 'main',
         files,
     };
+
+    const authorLinks = centrallyManagedAuthor?.links || previous?.authorLinks || [];
+    if (authorLinks.length > 0) collectionData.authorLinks = authorLinks;
+    const authorAvatar = centrallyManagedAuthor?.avatar || previous?.authorAvatar;
+    if (authorAvatar) {
+        const avatarFile = resolve(root, authorAvatar.slice(1));
+        if (!await exists(avatarFile)) throw new Error(`Missing author avatar file: ${avatarFile}`);
+        const publicAvatar = resolve(root, 'public', authorAvatar.slice(1));
+        await mkdir(dirname(publicAvatar), { recursive: true });
+        await copyFile(avatarFile, publicAvatar);
+        collectionData.authorAvatar = authorAvatar;
+    }
 
     for (const field of ['authorBio', 'authorAvatar', 'authorUrl', 'authorTag', 'description']) {
         const value = Object.hasOwn(metadata, field) ? metadata[field] : previous?.[field];

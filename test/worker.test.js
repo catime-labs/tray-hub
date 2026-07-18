@@ -12,6 +12,10 @@ test('serves a website-compatible manifest', async () => {
     assert.equal(manifest.sections.eirna.count, 3);
     assert.deepEqual(manifest.sections.eirna.files, ['1.gif', '2.gif', '3.gif']);
     assert.match(manifest.sections.eirna.fileVersions[0], /^[a-f0-9]{12}$/);
+    assert.deepEqual(manifest.sections.eirna.authorLinks, [
+        { label: 'Bilibili', url: 'https://space.bilibili.com/1195508399' },
+    ]);
+    assert.equal(manifest.sections.eirna.authorAvatar, 'https://tray.example/avatars/eirna.webp');
     assert.equal(manifest.sections.eirna.cdnBase, 'https://tray.example/assets/eirna/');
 });
 

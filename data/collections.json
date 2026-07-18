@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updated": "2026-07-17T06:20:02.622Z",
+  "updated": "2026-07-18T01:16:45.759Z",
   "collections": [
     {
       "key": "eirna",
@@ -13,7 +13,14 @@
         "2.gif",
         "3.gif"
       ],
-      "updated": "2026-07-17T06:20:02.619Z"
+      "authorLinks": [
+        {
+          "label": "Bilibili",
+          "url": "https://space.bilibili.com/1195508399"
+        }
+      ],
+      "authorAvatar": "/avatars/eirna.webp",
+      "updated": "2026-07-18T01:16:45.757Z"
     }
   ]
 }
