@@ -5,27 +5,30 @@ import { join } from 'node:path';
 import test from 'node:test';
 import sharp from 'sharp';
 import {
-    buildGif,
+    buildAsset,
     outputFilename,
     parseAni,
     sourceFingerprint,
     validateSource,
 } from '../scripts/asset-pipeline.mjs';
 
-test('normalizes supported source filenames to GIF paths', () => {
+test('preserves image filenames and converts only ANI paths to GIF', () => {
     assert.equal(outputFilename('1.gif'), '1.gif');
-    assert.equal(outputFilename('nested/cursor.WEBP'), 'nested/cursor.gif');
+    assert.equal(outputFilename('nested/cursor.WEBP'), 'nested/cursor.WEBP');
+    assert.equal(outputFilename('still.png'), 'still.png');
+    assert.equal(outputFilename('photo.jpg'), 'photo.jpg');
+    assert.equal(outputFilename('photo.jpeg'), 'photo.jpeg');
     assert.equal(outputFilename('animated.ani'), 'animated.gif');
-    assert.throws(() => outputFilename('image.png'), /Unsupported/);
+    assert.throws(() => outputFilename('video.mp4'), /Unsupported/);
 });
 
-test('converts WebP to an optimized GIF and reuses the conversion cache', async t => {
+test('preserves WebP bytes and reuses the asset cache', async t => {
     const directory = await mkdtemp(join(tmpdir(), 'tray-webp-'));
     t.after(() => rm(directory, { recursive: true, force: true }));
 
     const source = join(directory, 'source.webp');
-    const firstOutput = join(directory, 'first.gif');
-    const secondOutput = join(directory, 'second.gif');
+    const firstOutput = join(directory, 'first.webp');
+    const secondOutput = join(directory, 'second.webp');
     const cacheRoot = join(directory, 'cache');
     await sharp({ create: { width: 12, height: 10, channels: 4, background: '#ff3b7f' } })
         .webp({ lossless: true })
@@ -34,13 +37,23 @@ test('converts WebP to an optimized GIF and reuses the conversion cache', async 
     const contents = await readFile(source);
     await validateSource('source.webp', contents);
     const fingerprint = sourceFingerprint('source.webp', contents);
-    const first = await buildGif({ sourcePath: source, sourceFilename: 'source.webp', destination: firstOutput, cacheRoot, fingerprint });
-    const second = await buildGif({ sourcePath: source, sourceFilename: 'source.webp', destination: secondOutput, cacheRoot, fingerprint });
+    const first = await buildAsset({ sourcePath: source, sourceFilename: 'source.webp', destination: firstOutput, cacheRoot, fingerprint });
+    const second = await buildAsset({ sourcePath: source, sourceFilename: 'source.webp', destination: secondOutput, cacheRoot, fingerprint });
 
     assert.equal(first.cacheHit, false);
     assert.equal(second.cacheHit, true);
-    assert.match((await readFile(firstOutput)).subarray(0, 6).toString('ascii'), /^GIF8[79]a$/);
+    assert.deepEqual(await readFile(firstOutput), contents);
     assert.deepEqual(await readFile(secondOutput), await readFile(firstOutput));
+});
+
+test('accepts valid PNG, JPG, and JPEG image sources', async () => {
+    const png = await sharp({ create: { width: 4, height: 3, channels: 4, background: '#00ff00' } }).png().toBuffer();
+    const jpeg = await sharp({ create: { width: 4, height: 3, channels: 3, background: '#0000ff' } }).jpeg().toBuffer();
+
+    assert.equal((await validateSource('still.png', png)).format, 'png');
+    assert.equal((await validateSource('photo.jpg', jpeg)).format, 'jpg');
+    assert.equal((await validateSource('photo.jpeg', jpeg)).format, 'jpeg');
+    await assert.rejects(validateSource('fake.png', jpeg), /not a valid PNG/);
 });
 
 test('converts ANI cursor steps and timing to an animated GIF', async t => {
@@ -58,7 +71,7 @@ test('converts ANI cursor steps and timing to an animated GIF', async t => {
     const source = join(directory, 'cursor.ani');
     const output = join(directory, 'cursor.gif');
     await writeFile(source, ani);
-    await buildGif({
+    await buildAsset({
         sourcePath: source,
         sourceFilename: 'cursor.ani',
         destination: output,

@@ -3,7 +3,7 @@ import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
     SUPPORTED_EXTENSIONS,
-    buildGif,
+    buildAsset,
     outputFilename,
     sourceFingerprint,
     validateSource,
@@ -66,7 +66,7 @@ for (const repository of repositories) {
 
     if (!skipAssetBuild) {
         await mapLimit(assets, conversionConcurrency, async asset => {
-            const result = await buildGif({
+            const result = await buildAsset({
                 sourcePath: asset.sourcePath,
                 sourceFilename: asset.sourceFilename,
                 destination: resolve(outputRoot, repository.name, asset.outputFilename),
@@ -122,11 +122,11 @@ for (const repository of repositories) {
 
     collections.push(collection);
     assetCollections[collection.key] = { files: hashes };
-    console.log(`${repository.name}: ${assets.length} supported sources -> ${files.length} GIF files`);
+    console.log(`${repository.name}: ${assets.length} supported sources -> ${files.length} web assets`);
 }
 
 if (collections.length === 0) {
-    throw new Error(`No sibling image repositories containing GIF, WebP, or ANI files were found in ${repositoryRoot}`);
+    throw new Error(`No sibling image repositories containing GIF, WebP, PNG, JPEG, or ANI files were found in ${repositoryRoot}`);
 }
 
 const catalogChanged = JSON.stringify(oldCatalog.collections) !== JSON.stringify(collections);
@@ -147,9 +147,9 @@ await writeFile(assetLockPath, `${JSON.stringify(assetLock, null, 2)}\n`);
 
 const totalFiles = collections.reduce((sum, item) => sum + item.files.length, 0);
 if (skipAssetBuild) {
-    console.log(`Catalog: ${collections.length} collections, ${totalFiles} GIF outputs (conversion skipped)`);
+    console.log(`Catalog: ${collections.length} collections, ${totalFiles} asset outputs (build skipped)`);
 } else {
-    console.log(`Catalog: ${collections.length} collections, ${totalFiles} GIF outputs`);
+    console.log(`Catalog: ${collections.length} collections, ${totalFiles} asset outputs`);
     console.log(`Asset build: ${buildStats.converted} generated, ${buildStats.cacheHits} cache hits, ${formatBytes(buildStats.inputBytes)} -> ${formatBytes(buildStats.outputBytes)}`);
 }
 

@@ -1,13 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { copyFile, mkdir, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, extname, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import decodeIco from 'decode-ico';
 import createGifsicle from 'gifsicle-wasm';
 import sharp from 'sharp';
 
-export const SUPPORTED_EXTENSIONS = new Set(['.ani', '.gif', '.webp']);
-export const PIPELINE_VERSION = 'gif-pipeline-v2';
+export const SUPPORTED_EXTENSIONS = new Set(['.ani', '.gif', '.webp', '.png', '.jpg', '.jpeg']);
+export const PIPELINE_VERSION = 'asset-pipeline-v3';
 
 const MAX_SOURCE_BYTES = positiveInteger(process.env.TRAY_MAX_SOURCE_MB, 64) * 1024 * 1024;
 const MAX_FRAMES = positiveInteger(process.env.TRAY_MAX_FRAMES, 1000);
@@ -27,7 +27,9 @@ export function outputFilename(sourceFilename) {
     if (!SUPPORTED_EXTENSIONS.has(extension)) {
         throw new Error(`Unsupported tray asset extension: ${sourceFilename}`);
     }
-    return `${sourceFilename.slice(0, -extname(sourceFilename).length)}.gif`;
+    return extension === '.ani'
+        ? `${sourceFilename.slice(0, -extname(sourceFilename).length)}.gif`
+        : sourceFilename;
 }
 
 export function sourceFingerprint(sourceFilename, contents) {
@@ -54,11 +56,14 @@ export async function validateSource(sourceFilename, contents) {
         return { format: 'ani', frames: ani.stepCount };
     }
 
-    if (extension === '.gif' && !isGif(contents)) throw new Error(`${sourceFilename} is not a GIF file`);
-    if (extension === '.webp' && !isWebp(contents)) throw new Error(`${sourceFilename} is not a WebP file`);
     if (!SUPPORTED_EXTENSIONS.has(extension)) throw new Error(`Unsupported tray asset: ${sourceFilename}`);
 
+    if (extension === '.gif' && !isGif(contents)) throw new Error(`${sourceFilename} is not a GIF file`);
+    if (extension === '.webp' && !isWebp(contents)) throw new Error(`${sourceFilename} is not a WebP file`);
+
     const metadata = await sharp(contents, { animated: true, limitInputPixels: MAX_FRAME_PIXELS }).metadata();
+    const expectedFormat = extension === '.jpg' || extension === '.jpeg' ? 'jpeg' : extension.slice(1);
+    if (metadata.format !== expectedFormat) throw new Error(`${sourceFilename} is not a valid ${extension.slice(1).toUpperCase()} file`);
     const frames = metadata.pages || 1;
     const width = metadata.width || 0;
     const height = metadata.pageHeight || metadata.height || 0;
@@ -66,12 +71,14 @@ export async function validateSource(sourceFilename, contents) {
     return { format: extension.slice(1), frames };
 }
 
-export async function buildGif({ sourcePath, sourceFilename, destination, cacheRoot, fingerprint }) {
-    const cached = resolve(cacheRoot, `${fingerprint}.gif`);
+export async function buildAsset({ sourcePath, sourceFilename, destination, cacheRoot, fingerprint }) {
+    const extension = extname(sourceFilename).toLowerCase();
+    const outputExtension = extname(outputFilename(sourceFilename)).toLowerCase();
+    const cached = resolve(cacheRoot, `${fingerprint}${outputExtension}`);
     await mkdir(dirname(destination), { recursive: true });
     await mkdir(cacheRoot, { recursive: true });
 
-    if (await isValidGifFile(cached)) {
+    if (await isValidCachedAsset(cached, outputExtension)) {
         await copyFile(cached, destination);
         return {
             cacheHit: true,
@@ -83,27 +90,25 @@ export async function buildGif({ sourcePath, sourceFilename, destination, cacheR
     const temporary = resolve(cacheRoot, `${fingerprint}-${process.pid}-${randomUUID()}`);
     const converted = `${temporary}.converted.gif`;
     const optimized = `${temporary}.optimized.gif`;
-    const extension = extname(sourceFilename).toLowerCase();
 
     try {
         if (extension === '.gif') {
             await optimizeGif(sourcePath, optimized);
-        } else if (extension === '.webp') {
-            await convertWebp(sourcePath, converted);
-            await optimizeGif(converted, optimized);
         } else if (extension === '.ani') {
             await convertAni(await readFile(sourcePath), converted);
             await optimizeGif(converted, optimized);
         } else {
-            throw new Error(`Unsupported tray asset: ${sourceFilename}`);
+            await copyFile(sourcePath, cached);
         }
 
-        const signature = (await readFile(optimized)).subarray(0, 6).toString('ascii');
-        if (signature !== 'GIF87a' && signature !== 'GIF89a') {
-            throw new Error(`Conversion did not produce a valid GIF for ${sourceFilename}`);
+        if (extension === '.gif' || extension === '.ani') {
+            const signature = (await readFile(optimized)).subarray(0, 6).toString('ascii');
+            if (signature !== 'GIF87a' && signature !== 'GIF89a') {
+                throw new Error(`Conversion did not produce a valid GIF for ${sourceFilename}`);
+            }
+            await rename(optimized, cached);
         }
 
-        await rename(optimized, cached);
         await copyFile(cached, destination);
         return {
             cacheHit: false,
@@ -165,28 +170,6 @@ export function parseAni(contents) {
         Math.min(65_535, Math.max(10, Math.round((rates[index] ?? fallbackRate) * 1000 / 60))));
 
     return { metadata, images, order, delays, stepCount };
-}
-
-async function convertWebp(source, destination) {
-    const metadata = await sharp(source, { animated: true, limitInputPixels: MAX_FRAME_PIXELS }).metadata();
-    const frames = metadata.pages || 1;
-    assertImageLimits(source, metadata.width || 0, metadata.pageHeight || metadata.height || 0, frames);
-
-    const animation = {};
-    if (metadata.delay?.length) animation.delay = metadata.delay;
-    if (Number.isInteger(metadata.loop)) animation.loop = metadata.loop;
-
-    await sharp(source, { animated: true, limitInputPixels: MAX_FRAME_PIXELS })
-        .gif({
-            reuse: false,
-            effort: 4,
-            colours: 256,
-            dither: 1,
-            interFrameMaxError: 0,
-            interPaletteMaxError: 0,
-            ...animation,
-        })
-        .toFile(destination);
 }
 
 async function convertAni(contents, destination) {
@@ -406,17 +389,9 @@ async function exists(path) {
     }
 }
 
-async function isValidGifFile(path) {
+async function isValidCachedAsset(path, extension) {
     if (!await exists(path)) return false;
-    const handle = await open(path, 'r');
-    const bytes = Buffer.alloc(6);
-    try {
-        await handle.read(bytes, 0, 6, 0);
-    } finally {
-        await handle.close();
-    }
-    const signature = bytes.toString('ascii');
-    if (signature === 'GIF87a' || signature === 'GIF89a') return true;
+    if (extension !== '.gif' || isGif(await readFile(path))) return true;
     await rm(path, { force: true });
     return false;
 }

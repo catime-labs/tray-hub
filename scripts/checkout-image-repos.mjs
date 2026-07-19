@@ -33,7 +33,7 @@ for (const repository of repositories) {
     discovered += 1;
 }
 
-if (discovered === 0) throw new Error(`No public GIF, WebP, or ANI repositories found in ${organization}`);
+if (discovered === 0) throw new Error(`No public GIF, WebP, PNG, JPEG, or ANI repositories found in ${organization}`);
 console.log(`Discovered ${discovered} image repositories.`);
 
 async function listRepositories() {
@@ -49,7 +49,7 @@ async function containsTrayAsset(repository) {
     const tree = await githubApi(
         `/repos/${repository.full_name}/git/trees/${encodeURIComponent(repository.default_branch)}?recursive=1`,
     );
-    return tree.tree.some(item => item.type === 'blob' && /\.(?:ani|gif|webp)$/i.test(item.path));
+    return tree.tree.some(item => item.type === 'blob' && /\.(?:ani|gif|webp|png|jpe?g)$/i.test(item.path));
 }
 
 async function githubApi(path) {
