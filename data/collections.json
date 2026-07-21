@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updated": "2026-07-18T01:16:45.759Z",
+  "updated": "2026-07-21T03:47:43.813Z",
   "collections": [
     {
       "key": "eirna",
@@ -9,9 +9,11 @@
       "repository": "https://github.com/catime-labs/eirna",
       "branch": "main",
       "files": [
-        "1.gif",
-        "2.gif",
-        "3.gif"
+        "1.png",
+        "2.png",
+        "3.png",
+        "4.png",
+        "5.png"
       ],
       "authorLinks": [
         {
@@ -20,7 +22,7 @@
         }
       ],
       "authorAvatar": "/avatars/eirna.webp",
-      "updated": "2026-07-18T01:16:45.757Z"
+      "updated": "2026-07-21T03:47:43.812Z"
     }
   ]
 }
