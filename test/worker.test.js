@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import catalog from '../data/collections.json' with { type: 'json' };
 import worker from '../src/index.js';
+
+const eirna = catalog.collections.find(collection => collection.key === 'eirna');
 
 test('serves a website-compatible manifest', async () => {
     const response = await worker.fetch(new Request('https://tray.example/sections.json'));
@@ -9,8 +12,9 @@ test('serves a website-compatible manifest', async () => {
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('Access-Control-Allow-Origin'), '*');
     assert.match(response.headers.get('Cache-Control'), /stale-while-revalidate=86400/);
-    assert.equal(manifest.sections.eirna.count, 3);
-    assert.deepEqual(manifest.sections.eirna.files, ['1.gif', '2.gif', '3.gif']);
+    assert.ok(eirna?.files.length > 0);
+    assert.equal(manifest.sections.eirna.count, eirna.files.length);
+    assert.deepEqual(manifest.sections.eirna.files, eirna.files);
     assert.match(manifest.sections.eirna.fileVersions[0], /^[a-f0-9]{12}$/);
     assert.deepEqual(manifest.sections.eirna.authorLinks, [
         { label: 'Bilibili', url: 'https://space.bilibili.com/1195508399' },
@@ -20,10 +24,12 @@ test('serves a website-compatible manifest', async () => {
 });
 
 test('redirects registered legacy asset routes to static assets', async () => {
-    const response = await worker.fetch(new Request('https://tray.example/v1/assets/eirna/2.gif?v=abc'));
+    const filename = eirna.files[0];
+    const encodedFilename = filename.split('/').map(encodeURIComponent).join('/');
+    const response = await worker.fetch(new Request(`https://tray.example/v1/assets/eirna/${encodedFilename}?v=abc`));
 
     assert.equal(response.status, 307);
-    assert.equal(response.headers.get('Location'), 'https://tray.example/assets/eirna/2.gif?v=abc');
+    assert.equal(response.headers.get('Location'), `https://tray.example/assets/eirna/${encodedFilename}?v=abc`);
 });
 
 test('rejects unknown assets', async () => {
