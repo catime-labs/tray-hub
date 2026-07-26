@@ -42,10 +42,14 @@ export function sourceFingerprint(sourceFilename, contents) {
         .digest('hex');
 }
 
-export async function validateSource(sourceFilename, contents) {
-    if (contents.length > MAX_SOURCE_BYTES) {
+export function validateSourceSize(sourceFilename, sourceBytes) {
+    if (sourceBytes > MAX_SOURCE_BYTES) {
         throw new Error(`${sourceFilename} exceeds the ${MAX_SOURCE_BYTES / 1024 / 1024} MB source limit`);
     }
+}
+
+export async function validateSource(sourceFilename, contents) {
+    validateSourceSize(sourceFilename, contents.length);
 
     const extension = extname(sourceFilename).toLowerCase();
     if (extension === '.ani') {
@@ -75,14 +79,15 @@ export async function buildAsset({ sourcePath, sourceFilename, destination, cach
     const extension = extname(sourceFilename).toLowerCase();
     const outputExtension = extname(outputFilename(sourceFilename)).toLowerCase();
     const cached = resolve(cacheRoot, `${fingerprint}${outputExtension}`);
+    const sourceStats = await stat(sourcePath);
     await mkdir(dirname(destination), { recursive: true });
     await mkdir(cacheRoot, { recursive: true });
 
-    if (await isValidCachedAsset(cached, outputExtension)) {
+    if (await isValidCachedAsset(cached, outputExtension, sourceStats.size)) {
         await copyFile(cached, destination);
         return {
             cacheHit: true,
-            inputBytes: (await stat(sourcePath)).size,
+            inputBytes: sourceStats.size,
             outputBytes: (await stat(cached)).size,
         };
     }
@@ -90,6 +95,7 @@ export async function buildAsset({ sourcePath, sourceFilename, destination, cach
     const temporary = resolve(cacheRoot, `${fingerprint}-${process.pid}-${randomUUID()}`);
     const converted = `${temporary}.converted.gif`;
     const optimized = `${temporary}.optimized.gif`;
+    const passthrough = `${temporary}${outputExtension}`;
 
     try {
         if (extension === '.gif') {
@@ -98,7 +104,8 @@ export async function buildAsset({ sourcePath, sourceFilename, destination, cach
             await convertAni(await readFile(sourcePath), converted);
             await optimizeGif(converted, optimized);
         } else {
-            await copyFile(sourcePath, cached);
+            await copyFile(sourcePath, passthrough);
+            await rename(passthrough, cached);
         }
 
         if (extension === '.gif' || extension === '.ani') {
@@ -112,13 +119,14 @@ export async function buildAsset({ sourcePath, sourceFilename, destination, cach
         await copyFile(cached, destination);
         return {
             cacheHit: false,
-            inputBytes: (await stat(sourcePath)).size,
+            inputBytes: sourceStats.size,
             outputBytes: (await stat(cached)).size,
         };
     } finally {
         await Promise.all([
             rm(converted, { force: true }),
             rm(optimized, { force: true }),
+            rm(passthrough, { force: true }),
         ]);
     }
 }
@@ -389,9 +397,9 @@ async function exists(path) {
     }
 }
 
-async function isValidCachedAsset(path, extension) {
+async function isValidCachedAsset(path, extension, sourceBytes) {
     if (!await exists(path)) return false;
-    if (extension !== '.gif' || isGif(await readFile(path))) return true;
+    if (extension === '.gif' ? isGif(await readFile(path)) : (await stat(path)).size === sourceBytes) return true;
     await rm(path, { force: true });
     return false;
 }

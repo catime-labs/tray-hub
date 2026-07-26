@@ -12,8 +12,12 @@ on:
       - '.github/workflows/sync.yml'
       - 'package-lock.json'
       - 'package.json'
+      - 'README.md'
+      - 'avatars/**'
+      - 'scripts/catalog-metadata.mjs'
       - 'scripts/checkout-catalog-repos.mjs'
       - 'scripts/checkout-image-repos.mjs'
+      - 'scripts/repository-discovery.mjs'
       - 'scripts/stage-assets.mjs'
 
 permissions:

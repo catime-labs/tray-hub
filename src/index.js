@@ -12,37 +12,49 @@ export default {
         }
 
         if (request.method !== 'GET' && request.method !== 'HEAD') {
-            return json({ error: 'Method not allowed' }, 405, cors, { Allow: 'GET, HEAD, OPTIONS' });
+            return json({ error: 'Method not allowed' }, 405, cors, {
+                method: request.method,
+                headers: { Allow: 'GET, HEAD, OPTIONS' },
+            });
         }
 
         if (url.pathname === '/' || url.pathname === '/health') {
             const payload = url.pathname === '/health'
                 ? { status: 'ok' }
                 : { name: 'tray-hub', version: 'v1', manifest: '/sections.json' };
-            return json(payload, 200, cors);
+            return json(payload, 200, cors, { method: request.method });
         }
 
         if (url.pathname === '/sections.json' || url.pathname === '/v1/collections') {
-            return json(createManifest(url.origin), 200, cors, { 'Cache-Control': JSON_CACHE_CONTROL }, request.method);
+            return json(createManifest(url.origin), 200, cors, {
+                method: request.method,
+                headers: { 'Cache-Control': JSON_CACHE_CONTROL },
+            });
         }
 
         const match = url.pathname.match(/^\/v1\/assets\/([^/]+)\/(.+)$/);
         if (match) {
             try {
-                return redirectAsset(url, decodeURIComponent(match[1]), decodeURIComponent(match[2]), cors);
+                return redirectAsset(
+                    url,
+                    decodeURIComponent(match[1]),
+                    decodeURIComponent(match[2]),
+                    cors,
+                    request.method,
+                );
             } catch {
-                return json({ error: 'Invalid asset path' }, 400, cors);
+                return json({ error: 'Invalid asset path' }, 400, cors, { method: request.method });
             }
         }
 
-        return json({ error: 'Not found' }, 404, cors);
+        return json({ error: 'Not found' }, 404, cors, { method: request.method });
     },
 };
 
-function redirectAsset(url, collectionKey, filename, cors) {
+function redirectAsset(url, collectionKey, filename, cors, method) {
     const collection = findCollection(collectionKey);
     if (!collection || !collection.files.includes(filename)) {
-        return json({ error: 'Asset not found' }, 404, cors);
+        return json({ error: 'Asset not found' }, 404, cors, { method });
     }
 
     const assetUrl = new URL(url);
@@ -57,7 +69,7 @@ function redirectAsset(url, collectionKey, filename, cors) {
     });
 }
 
-function json(payload, status, cors, extraHeaders = {}, method = 'GET') {
+function json(payload, status, cors, { headers: extraHeaders = {}, method = 'GET' } = {}) {
     const body = JSON.stringify(payload, null, 2);
     const headers = new Headers({
         'Content-Type': 'application/json; charset=utf-8',

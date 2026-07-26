@@ -10,6 +10,7 @@ import {
     parseAni,
     sourceFingerprint,
     validateSource,
+    validateSourceSize,
 } from '../scripts/asset-pipeline.mjs';
 
 test('preserves image filenames and converts only ANI paths to GIF', () => {
@@ -20,6 +21,14 @@ test('preserves image filenames and converts only ANI paths to GIF', () => {
     assert.equal(outputFilename('photo.jpeg'), 'photo.jpeg');
     assert.equal(outputFilename('animated.ani'), 'animated.gif');
     assert.throws(() => outputFilename('video.mp4'), /Unsupported/);
+});
+
+test('rejects oversized sources before reading them into the conversion pipeline', () => {
+    assert.doesNotThrow(() => validateSourceSize('within-limit.gif', 64 * 1024 * 1024));
+    assert.throws(
+        () => validateSourceSize('too-large.gif', 64 * 1024 * 1024 + 1),
+        /exceeds the 64 MB source limit/,
+    );
 });
 
 test('preserves WebP bytes and reuses the asset cache', async t => {

@@ -13,10 +13,10 @@ export function createManifest(origin) {
             title: collection.title,
             author: collection.author,
             authorBio: collection.authorBio || '',
-            authorAvatar: resolveAvatar(origin, collection.authorAvatar),
-            authorUrl: collection.authorUrl || '',
+            authorAvatar: resolvePublicUrl(collection.authorAvatar, origin),
+            authorUrl: resolvePublicUrl(collection.authorUrl),
             authorTag: collection.authorTag || '',
-            authorLinks: collection.authorLinks || [],
+            authorLinks: normalizeAuthorLinks(collection.authorLinks),
             description: collection.description || '',
             repository: collection.repository,
             repositoryName: repositoryName(collection.repository),
@@ -35,15 +35,30 @@ export function createManifest(origin) {
     };
 }
 
-function resolveAvatar(origin, avatar) {
-    if (!avatar) return '';
+export function resolvePublicUrl(value, base) {
+    if (!value) return '';
     try {
-        return new URL(avatar, origin).toString();
+        const url = new URL(value, base);
+        return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : '';
     } catch {
         return '';
     }
 }
 
-function repositoryName(repository) {
-    return new URL(repository).pathname.split('/').filter(Boolean).at(-1);
+function normalizeAuthorLinks(links) {
+    if (!Array.isArray(links)) return [];
+    return links.flatMap(link => {
+        if (!link || typeof link.label !== 'string') return [];
+        const label = link.label.trim();
+        const url = resolvePublicUrl(link.url);
+        return label && url ? [{ label, url }] : [];
+    });
+}
+
+export function repositoryName(repository) {
+    try {
+        return new URL(repository).pathname.split('/').filter(Boolean).at(-1) || '';
+    } catch {
+        return '';
+    }
 }

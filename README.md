@@ -36,9 +36,11 @@ npm run dev
 
 ## Image repository discovery
 
-Image repositories live next to `tray-hub`. Every immediate sibling directory
-that contains at least one `.gif`, `.webp`, or `.ani` file is discovered
-automatically:
+Image repositories live next to `tray-hub`. Existing catalog entries remain
+eligible automatically. A new public repository must explicitly opt in by
+adding the `catime-tray-assets` GitHub topic or a `tray.json` file at its root.
+This prevents screenshots and icons in unrelated organization repositories from
+being published as tray assets.
 
 ```text
 workspace/
@@ -48,8 +50,20 @@ workspace/
 │   ├── 2.webp
 │   └── 3.ani
 └── another-collection/
+    ├── tray.json
     └── nested/1.webp
 ```
+
+An empty JSON object is a valid marker for centrally managed collections:
+
+```json
+{}
+```
+
+The scheduled GitHub discovery records the repository URL and its actual
+default branch. Optional `repository` and `branch` values in `tray.json` are
+used only for local sibling-repository builds, must use a public HTTPS URL, and
+are validated before entering the catalog.
 
 Image repositories may contain `.gif`, `.webp`, `.png`, `.jpg`, `.jpeg`, and
 Windows animated cursor `.ani` files. `npm run stage` recursively scans those
@@ -68,9 +82,11 @@ ANI-to-GIF conversion itself can require palette quantization because GIF
 supports at most 256 colours per frame.
 
 Converted outputs are cached under `.cache/tray-assets` using a source hash.
-Unchanged files are copied from this cache. Conversion defaults to two parallel
-jobs, with one Sharp worker per job, to keep CPU and memory usage bounded. The
-following optional environment variables tune the safety limits:
+Unchanged files are copied from this cache, and passthrough formats are written
+atomically so an interrupted build cannot leave a reusable partial file. Source
+size is checked before the file is read into memory. Conversion defaults to two
+parallel jobs, with one Sharp worker per job, to keep CPU and memory usage
+bounded. The following optional environment variables tune the safety limits:
 
 - `TRAY_CONVERT_CONCURRENCY` (default `2`)
 - `TRAY_MAX_SOURCE_MB` (default `64`)
@@ -113,18 +129,20 @@ Cloudflare Workers build.
 
 ## Automatic asset checks
 
-The `Sync tray assets` workflow runs every 30 minutes. It discovers all public
-repositories in `catime-labs` that contain GIF, WebP, PNG, JPEG, or ANI files, validates
-their sources, and compares `data/assets-lock.json`, which stores a versioned
-SHA-256 fingerprint for every output. The scheduled check skips conversion to
-avoid spending CPU every 30 minutes. When a file is added, removed, renamed, or
-changed, the workflow commits the updated catalog and lock file back to
-`tray-hub`. That Git push then lets Cloudflare's Git integration perform the
-one required conversion and deployment.
+The `Sync tray assets` workflow runs every 30 minutes. It checks opted-in public
+repositories in `catime-labs`, validates their GIF, WebP, PNG, JPEG, and ANI
+sources, and compares `data/assets-lock.json`, which stores a versioned SHA-256
+fingerprint for every output. Repository tree checks and clones use bounded
+parallelism. The scheduled check skips conversion to avoid spending CPU every
+30 minutes. When a file is added, removed, renamed, or changed, the workflow
+commits the updated catalog and lock file back to `tray-hub`. That Git push then
+lets Cloudflare's Git integration perform the one required conversion and
+deployment.
 
 The Action does not call Cloudflare and requires no Cloudflare API token.
-`GITHUB_TOKEN` is supplied automatically by GitHub. New public GIF, WebP, PNG, JPEG, or ANI
-repositories are discovered without editing `tray-hub`.
+`GITHUB_TOKEN` is supplied automatically by GitHub. Add the
+`catime-tray-assets` topic or a root `tray.json` marker to register a new public
+image repository without editing `tray-hub`.
 
 The workflow can also be started manually or through a
 `tray-assets-updated` repository dispatch event. Scheduled checks require no

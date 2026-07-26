@@ -1,4 +1,4 @@
-import { access, copyFile, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { access, copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -7,14 +7,18 @@ import {
     outputFilename,
     sourceFingerprint,
     validateSource,
+    validateSourceSize,
 } from './asset-pipeline.mjs';
+import { resolveCollectionSource } from './catalog-metadata.mjs';
 import { parseAuthorInfo } from './read-author-info.mjs';
+import { isLocalRepositoryOptedIn } from './repository-discovery.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const catalogPath = resolve(root, 'data/collections.json');
 const assetLockPath = resolve(root, 'data/assets-lock.json');
 const oldCatalog = JSON.parse(await readFile(catalogPath, 'utf8'));
 const oldAssetLock = await readJson(assetLockPath, { version: '1.0.0', collections: {} });
+const discovery = await readJson(resolve(root, '.cache/discovered-repositories.json'), { repositories: {} });
 const oldCollections = new Map(oldCatalog.collections.map(collection => [collection.key, collection]));
 const authorInfo = parseAuthorInfo(await readFile(resolve(root, 'README.md'), 'utf8'));
 const outputRoot = resolve(root, 'public/assets');
@@ -29,11 +33,20 @@ const conversionConcurrency = positiveInteger(process.env.TRAY_CONVERT_CONCURREN
 await rm(outputRoot, { recursive: true, force: true });
 await mkdir(outputRoot, { recursive: true });
 
-const repositories = (await readdir(repositoryRoot, { withFileTypes: true }))
+const repositoryCandidates = (await readdir(repositoryRoot, { withFileTypes: true }))
     .filter(entry => entry.isDirectory() && !entry.name.startsWith('.'))
     .map(entry => ({ name: entry.name, path: resolve(repositoryRoot, entry.name) }))
     .filter(repository => repository.path !== root)
     .sort((left, right) => naturalCompare(left.name, right.name));
+const repositories = [];
+for (const repository of repositoryCandidates) {
+    const optedIn = isLocalRepositoryOptedIn(repository.name, {
+        knownCollections: oldCollections,
+        discoveredRepositories: discovery.repositories || {},
+        hasMarker: await exists(resolve(repository.path, 'tray.json')),
+    });
+    if (optedIn) repositories.push(repository);
+}
 
 const collections = [];
 const assetCollections = {};
@@ -54,6 +67,7 @@ for (const repository of repositories) {
         outputNames.set(collisionKey, sourceFilename);
 
         const sourcePath = resolve(repository.path, sourceFilename);
+        validateSourceSize(sourceFilename, (await stat(sourcePath)).size);
         const contents = await readFile(sourcePath);
         await validateSource(sourceFilename, contents);
         assets.push({
@@ -84,14 +98,20 @@ for (const repository of repositories) {
     const hashes = Object.fromEntries(assets.map(asset => [asset.outputFilename, asset.fingerprint]));
     const previous = oldCollections.get(repository.name);
     const metadata = await readMetadata(repository.path);
+    const source = resolveCollectionSource({
+        name: repository.name,
+        organization: githubOrganization,
+        metadata,
+        previous,
+        discovered: discovery.repositories?.[repository.name],
+    });
     const centrallyManagedAuthor = authorInfo[repository.name.toLowerCase()];
     const collectionData = {
         key: repository.name,
         title: metadata.title || previous?.title || repository.name,
         author: centrallyManagedAuthor?.name || metadata.author || previous?.author || repository.name,
-        repository: metadata.repository || previous?.repository
-            || `https://github.com/${githubOrganization}/${repository.name}`,
-        branch: metadata.branch || previous?.branch || 'main',
+        repository: source.repository,
+        branch: source.branch,
         files,
     };
 

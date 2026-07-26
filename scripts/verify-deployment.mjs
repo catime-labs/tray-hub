@@ -1,3 +1,5 @@
+import { assertPublishedAsset, selectFormatSamples } from './asset-signature.mjs';
+
 const baseUrl = (process.env.TRAY_HUB_URL || 'https://tray.cati.me').replace(/\/$/, '');
 const verificationId = process.env.TRAY_VERIFY_TOKEN || Date.now().toString(36);
 const attempts = positiveInteger(process.env.TRAY_VERIFY_ATTEMPTS, 6);
@@ -31,35 +33,36 @@ async function verify() {
         if (!Array.isArray(section.files) || section.files.length === 0) {
             throw new Error(`${section.title || 'collection'} contains no files`);
         }
-        const filename = section.files[0].split('/').map(encodeURIComponent).join('/');
-        const assetUrl = `${section.cdnBase}${filename}?v=${section.fileVersions?.[0] || verificationId}`;
-        const asset = await fetch(assetUrl, {
-            cache: 'no-store',
-            headers: { Range: 'bytes=0-5' },
-        });
-        if (!asset.ok) throw new Error(`${assetUrl} returned ${asset.status}`);
-        if (asset.headers.get('Content-Type') !== 'image/gif') {
-            throw new Error(`${assetUrl} returned ${asset.headers.get('Content-Type')}`);
-        }
-        const signature = await readSignature(asset);
-        if (signature !== 'GIF87a' && signature !== 'GIF89a') {
-            throw new Error(`${assetUrl} is not a valid GIF`);
+        for (const sample of selectFormatSamples(section.files)) {
+            const filename = sample.filename.split('/').map(encodeURIComponent).join('/');
+            const version = section.fileVersions?.[sample.index] || verificationId;
+            const assetUrl = `${section.cdnBase}${filename}?v=${version}`;
+            const asset = await fetch(assetUrl, {
+                cache: 'no-store',
+                headers: { Range: 'bytes=0-11' },
+            });
+            if (!asset.ok) throw new Error(`${assetUrl} returned ${asset.status}`);
+            assertPublishedAsset(
+                sample.filename,
+                asset.headers.get('Content-Type'),
+                await readPrefix(asset, 12),
+            );
         }
     }
 }
 
-async function readSignature(response) {
+async function readPrefix(response, length) {
     if (!response.body) throw new Error('asset response has no body');
 
     const reader = response.body.getReader();
     const bytes = [];
-    while (bytes.length < 6) {
+    while (bytes.length < length) {
         const { done, value } = await reader.read();
         if (done) break;
-        bytes.push(...value.subarray(0, 6 - bytes.length));
+        bytes.push(...value.subarray(0, length - bytes.length));
     }
     await reader.cancel();
-    return new TextDecoder().decode(Uint8Array.from(bytes));
+    return Uint8Array.from(bytes);
 }
 
 function positiveInteger(value, fallback) {

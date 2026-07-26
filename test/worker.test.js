@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import catalog from '../data/collections.json' with { type: 'json' };
+import { repositoryName, resolvePublicUrl } from '../src/catalog.js';
 import worker from '../src/index.js';
 
 const eirna = catalog.collections.find(collection => collection.key === 'eirna');
@@ -45,6 +46,24 @@ test('handles preflight and unsupported methods', async () => {
     assert.equal(options.status, 204);
     assert.equal(post.status, 405);
     assert.equal(post.headers.get('Allow'), 'GET, HEAD, OPTIONS');
+});
+
+test('returns empty bodies for HEAD requests on every JSON route', async () => {
+    for (const path of ['/health', '/sections.json', '/missing', '/v1/assets/eirna/missing.gif']) {
+        const response = await worker.fetch(new Request(`https://tray.example${path}`, { method: 'HEAD' }));
+        assert.equal(await response.text(), '');
+    }
+});
+
+test('tolerates invalid repository metadata when building display names', () => {
+    assert.equal(repositoryName('not a URL'), '');
+    assert.equal(repositoryName('https://github.com/catime-labs/eirna'), 'eirna');
+});
+
+test('only publishes HTTP or HTTPS profile and avatar URLs', () => {
+    assert.equal(resolvePublicUrl('javascript:alert(1)'), '');
+    assert.equal(resolvePublicUrl('/avatars/eirna.webp', 'https://tray.example'), 'https://tray.example/avatars/eirna.webp');
+    assert.equal(resolvePublicUrl('https://example.com/profile'), 'https://example.com/profile');
 });
 
 test('returns a client error for malformed asset paths', async () => {
