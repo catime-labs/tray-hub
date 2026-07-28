@@ -5,3 +5,5 @@ coverage/
 .cache/
 public/assets/
 public/avatars/
+public/posters/
+public/previews/

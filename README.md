@@ -5,8 +5,11 @@ Cloudflare Worker registry and static asset service for Catime tray animations.
 ## API
 
 - `GET /sections.json` returns the website-compatible collection manifest.
-- `GET /assets/:collection/:file` serves an animation directly from Cloudflare Static
-  Assets.
+- `GET /posters/:collection/:file.webp` serves a 128px static first-frame WebP.
+- `GET /previews/:collection/:file.webp` serves a 128px animated WebP preview.
+- `GET /assets/:collection/:file` serves the original web-ready animation for
+  downloads.
+- `GET /avatars/:collection/a.*` serves the collection author's avatar.
 - `GET /health` returns the service status.
 
 The old `/v1/*` routes and old catalog field aliases are intentionally not
@@ -15,7 +18,8 @@ supported.
 Only files listed in `data/collections.json` are staged and served. Production
 requests never fetch images from GitHub. During deployment, supported source
 files from the checked-out image repositories are converted to GIF, optimized,
-and uploaded to Cloudflare Static Assets.
+and uploaded to Cloudflare Static Assets together with their lightweight
+display derivatives.
 
 Manifest and asset routes are public and send permissive CORS headers so they
 can be used by the production website, local development, and other clients.
@@ -111,6 +115,19 @@ bounded. The following optional environment variables tune the safety limits:
 - `TRAY_MAX_FRAME_PIXELS` (default `4194304`)
 - `TRAY_MAX_TOTAL_PIXELS` (default `48000000`)
 
+Every web-ready animation also produces two collision-safe files such as
+`1.gif.webp`: a static poster under `public/posters` and an animated preview
+under `public/previews`. Both are rendered into a transparent 128×128 canvas.
+The website can therefore paint a tiny poster immediately, load motion only
+when network conditions allow it, and reserve the full original for an actual
+download. These derivatives have independent pipeline versions, fingerprints,
+and caches under `.cache/tray-display-assets`, so changing preview compression
+does not invalidate or rebuild the original animation.
+
+Originals, avatars, posters, and previews use fingerprint query versions and a
+one-year immutable browser cache. The small manifest keeps a short cache window
+so newly discovered public repositories still appear automatically.
+
 ## Cloudflare deployment
 
 Connect the public `tray-hub` repository to Cloudflare Workers Builds. The
@@ -142,8 +159,9 @@ integration.
 
 The `Sync tray assets` workflow runs every 30 minutes. It checks matching public
 repositories in `catime-labs`, validates their GIF, WebP, PNG, JPEG, and ANI
-sources, and compares `data/assets-lock.json`, which stores a versioned SHA-256
-fingerprint for every output. Repository tree checks and clones use bounded
+sources, and compares `data/assets-lock.json`, which stores versioned SHA-256
+fingerprints for originals, avatars, posters, and previews. Repository tree
+checks and clones use bounded
 parallelism. The scheduled check skips conversion to avoid spending CPU every
 30 minutes. When a file is added, removed, renamed, or changed, the workflow
 commits the updated catalog and lock file back to `tray-hub`. It also compares

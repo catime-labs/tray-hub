@@ -17,10 +17,12 @@ on:
       - 'scripts/catalog-metadata.mjs'
       - 'scripts/checkout-catalog-repos.mjs'
       - 'scripts/checkout-image-repos.mjs'
+      - 'scripts/asset-pipeline.mjs'
       - 'scripts/deployment-catalog.mjs'
       - 'scripts/repository-discovery.mjs'
       - 'scripts/stage-assets.mjs'
       - 'scripts/verify-deployment.mjs'
+      - 'src/catalog.js'
 
 permissions:
   contents: write

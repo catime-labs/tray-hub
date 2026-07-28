@@ -4,6 +4,9 @@ import { fileURLToPath } from 'node:url';
 import {
     SUPPORTED_EXTENSIONS,
     buildAsset,
+    buildDisplayAssets,
+    displayFilename,
+    displayFingerprint,
     outputFilename,
     sourceFingerprint,
     validateSource,
@@ -21,7 +24,10 @@ const discovery = await readJson(resolve(root, '.cache/discovered-repositories.j
 const oldCollections = new Map(oldCatalog.collections.map(collection => [collection.key, collection]));
 const outputRoot = resolve(root, 'public/assets');
 const avatarOutputRoot = resolve(root, 'public/avatars');
+const posterOutputRoot = resolve(root, 'public/posters');
+const previewOutputRoot = resolve(root, 'public/previews');
 const cacheRoot = resolve(root, '.cache/tray-assets');
+const displayCacheRoot = resolve(root, '.cache/tray-display-assets');
 const repositoryRoot = process.env.TRAY_ASSET_ROOT
     ? resolve(process.env.TRAY_ASSET_ROOT)
     : resolve(root, '..');
@@ -32,10 +38,14 @@ const conversionConcurrency = positiveInteger(process.env.TRAY_CONVERT_CONCURREN
 await Promise.all([
     rm(outputRoot, { recursive: true, force: true }),
     rm(avatarOutputRoot, { recursive: true, force: true }),
+    rm(posterOutputRoot, { recursive: true, force: true }),
+    rm(previewOutputRoot, { recursive: true, force: true }),
 ]);
 await Promise.all([
     mkdir(outputRoot, { recursive: true }),
     mkdir(avatarOutputRoot, { recursive: true }),
+    mkdir(posterOutputRoot, { recursive: true }),
+    mkdir(previewOutputRoot, { recursive: true }),
 ]);
 
 const repositories = (await readdir(repositoryRoot, { withFileTypes: true }))
@@ -46,7 +56,16 @@ const repositories = (await readdir(repositoryRoot, { withFileTypes: true }))
 
 const collections = [];
 const assetCollections = {};
-const buildStats = { cacheHits: 0, converted: 0, inputBytes: 0, outputBytes: 0 };
+const buildStats = {
+    cacheHits: 0,
+    converted: 0,
+    inputBytes: 0,
+    outputBytes: 0,
+    displayCacheHits: 0,
+    displayGenerated: 0,
+    posterBytes: 0,
+    previewBytes: 0,
+};
 
 for (const repository of repositories) {
     const repositoryInfo = await readRepositoryInfo(repository);
@@ -69,11 +88,17 @@ for (const repository of repositories) {
         validateSourceSize(sourceFilename, (await stat(sourcePath)).size);
         const contents = await readFile(sourcePath);
         await validateSource(sourceFilename, contents);
+        const fingerprint = sourceFingerprint(sourceFilename, contents);
+        const webFilename = displayFilename(output);
         assets.push({
             sourceFilename,
             sourcePath,
             outputFilename: output,
-            fingerprint: sourceFingerprint(sourceFilename, contents),
+            fingerprint,
+            posterFilename: webFilename,
+            previewFilename: webFilename,
+            posterFingerprint: displayFingerprint('poster', output, fingerprint),
+            previewFingerprint: displayFingerprint('preview', output, fingerprint),
         });
     }
 
@@ -95,6 +120,8 @@ for (const repository of repositories) {
         const buildJobs = assets.map(asset => ({
             ...asset,
             destination: resolve(outputRoot, repository.name, asset.outputFilename),
+            posterDestination: resolve(posterOutputRoot, repository.name, asset.posterFilename),
+            previewDestination: resolve(previewOutputRoot, repository.name, asset.previewFilename),
         }));
         if (avatarAsset) {
             buildJobs.push({
@@ -115,12 +142,33 @@ for (const repository of repositories) {
             buildStats.converted += Number(!result.cacheHit);
             buildStats.inputBytes += result.inputBytes;
             buildStats.outputBytes += result.outputBytes;
+
+            if (asset.posterDestination && asset.previewDestination) {
+                const display = await buildDisplayAssets({
+                    sourcePath: asset.destination,
+                    assetFilename: asset.outputFilename,
+                    assetFingerprint: asset.fingerprint,
+                    posterDestination: asset.posterDestination,
+                    previewDestination: asset.previewDestination,
+                    cacheRoot: displayCacheRoot,
+                });
+                buildStats.displayCacheHits += Number(display.poster.cacheHit) + Number(display.preview.cacheHit);
+                buildStats.displayGenerated += Number(!display.poster.cacheHit) + Number(!display.preview.cacheHit);
+                buildStats.posterBytes += display.poster.outputBytes;
+                buildStats.previewBytes += display.preview.outputBytes;
+            }
         });
     }
 
     const files = assets.map(asset => asset.outputFilename);
     const hashes = Object.fromEntries(assets.map(asset => [asset.outputFilename, asset.fingerprint]));
-    const collectionAssetLock = { files: hashes };
+    const posterHashes = Object.fromEntries(assets.map(asset => [asset.posterFilename, asset.posterFingerprint]));
+    const previewHashes = Object.fromEntries(assets.map(asset => [asset.previewFilename, asset.previewFingerprint]));
+    const collectionAssetLock = {
+        files: hashes,
+        posters: posterHashes,
+        previews: previewHashes,
+    };
     if (avatarAsset) collectionAssetLock.avatar = avatarAsset.fingerprint;
     const previous = oldCollections.get(repository.name);
     const source = resolveCollectionSource({
@@ -178,6 +226,7 @@ if (skipAssetBuild) {
 } else {
     console.log(`Catalog: ${collections.length} collections, ${totalFiles} asset outputs`);
     console.log(`Asset build: ${buildStats.converted} generated, ${buildStats.cacheHits} cache hits, ${formatBytes(buildStats.inputBytes)} -> ${formatBytes(buildStats.outputBytes)}`);
+    console.log(`Display assets: ${buildStats.displayGenerated} generated, ${buildStats.displayCacheHits} cache hits, ${formatBytes(buildStats.posterBytes)} posters + ${formatBytes(buildStats.previewBytes)} previews`);
 }
 
 async function findSourceFiles(directory, current = directory) {

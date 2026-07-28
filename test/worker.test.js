@@ -19,6 +19,16 @@ test('serves a website-compatible manifest', async () => {
     assert.equal('author' in manifest.sections.eirna, false);
     assert.equal('title' in manifest.sections.eirna, false);
     assert.match(manifest.sections.eirna.fileVersions[0], /^[a-f0-9]{12}$/);
+    assert.deepEqual(
+        manifest.sections.eirna.posterFiles,
+        eirna.files.map(filename => `${filename}.webp`),
+    );
+    assert.deepEqual(
+        manifest.sections.eirna.previewFiles,
+        eirna.files.map(filename => `${filename}.webp`),
+    );
+    assert.match(manifest.sections.eirna.posterVersions[0], /^[a-f0-9]{12}$/);
+    assert.match(manifest.sections.eirna.previewVersions[0], /^[a-f0-9]{12}$/);
     assert.deepEqual(manifest.sections.eirna.authorLinks, [
         { label: 'Bilibili', url: 'https://space.bilibili.com/1195508399' },
     ]);
@@ -27,6 +37,8 @@ test('serves a website-compatible manifest', async () => {
         /^https:\/\/tray\.example\/avatars\/eirna\/a\.webp\?v=[a-f0-9]{12}$/,
     );
     assert.equal(manifest.sections.eirna.cdnBase, 'https://tray.example/assets/eirna/');
+    assert.equal(manifest.sections.eirna.posterCdnBase, 'https://tray.example/posters/eirna/');
+    assert.equal(manifest.sections.eirna.previewCdnBase, 'https://tray.example/previews/eirna/');
 });
 
 test('does not expose the removed v1 compatibility routes', async () => {

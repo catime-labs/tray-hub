@@ -24,11 +24,20 @@ export function assertManifestMatchesCatalog({ manifest, catalog, assetLock, bas
         const section = sections[collection.key];
         const lock = assetLock?.collections?.[collection.key] || {};
         const expectedVersions = collection.files.map(filename => lock.files?.[filename]?.slice(0, 12) || '');
+        const expectedDisplayFiles = collection.files.map(filename => `${filename}.webp`);
+        const expectedPosterVersions = expectedDisplayFiles.map(filename => lock.posters?.[filename]?.slice(0, 12) || '');
+        const expectedPreviewVersions = expectedDisplayFiles.map(filename => lock.previews?.[filename]?.slice(0, 12) || '');
         const expectedAvatar = versionedPublicUrl(collection.authorAvatar, origin, lock.avatar);
 
         assertEqual(section.count, collection.files.length, `${collection.key} count`);
         assertEqual(section.files, collection.files, `${collection.key} files`);
         assertEqual(section.fileVersions, expectedVersions, `${collection.key} fileVersions`);
+        assertEqual(section.posterCdnBase, `${origin}/posters/${encodeURIComponent(collection.key)}/`, `${collection.key} posterCdnBase`);
+        assertEqual(section.posterFiles, expectedDisplayFiles, `${collection.key} posterFiles`);
+        assertEqual(section.posterVersions, expectedPosterVersions, `${collection.key} posterVersions`);
+        assertEqual(section.previewCdnBase, `${origin}/previews/${encodeURIComponent(collection.key)}/`, `${collection.key} previewCdnBase`);
+        assertEqual(section.previewFiles, expectedDisplayFiles, `${collection.key} previewFiles`);
+        assertEqual(section.previewVersions, expectedPreviewVersions, `${collection.key} previewVersions`);
         assertEqual(section.authorAvatar || '', expectedAvatar, `${collection.key} authorAvatar`);
         assertEqual(section.authorLinks || [], collection.authorLinks || [], `${collection.key} authorLinks`);
         assertEqual(section.repository, collection.repository, `${collection.key} repository`);

@@ -41,13 +41,33 @@ async function verify() {
         const avatarUrl = new URL(section.authorAvatar);
         await verifyPublishedAsset(avatarUrl.toString(), avatarUrl.pathname);
 
+        await verifySectionDisplayAsset(section, 'poster');
+        await verifySectionDisplayAsset(section, 'preview');
+
         for (const sample of selectFormatSamples(section.files)) {
-            const filename = sample.filename.split('/').map(encodeURIComponent).join('/');
-            const version = section.fileVersions?.[sample.index] || verificationId;
-            const assetUrl = `${section.cdnBase}${filename}?v=${version}`;
-            await verifyPublishedAsset(assetUrl, sample.filename);
+            await verifyVersionedAsset(
+                section.cdnBase,
+                sample.filename,
+                section.fileVersions?.[sample.index],
+            );
         }
     }
+}
+
+async function verifySectionDisplayAsset(section, kind) {
+    const files = section[`${kind}Files`];
+    const versions = section[`${kind}Versions`];
+    const cdnBase = section[`${kind}CdnBase`];
+    if (!Array.isArray(files) || files.length !== section.files.length || !cdnBase) {
+        throw new Error(`${section.repository || 'collection'} contains invalid ${kind} assets`);
+    }
+    await verifyVersionedAsset(cdnBase, files[0], versions?.[0]);
+}
+
+async function verifyVersionedAsset(cdnBase, filename, version) {
+    const encodedFilename = filename.split('/').map(encodeURIComponent).join('/');
+    const assetUrl = `${cdnBase}${encodedFilename}?v=${version || verificationId}`;
+    await verifyPublishedAsset(assetUrl, filename);
 }
 
 async function verifyPublishedAsset(assetUrl, filename) {

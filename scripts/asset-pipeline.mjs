@@ -8,6 +8,10 @@ import sharp from 'sharp';
 
 export const SUPPORTED_EXTENSIONS = new Set(['.ani', '.gif', '.webp', '.png', '.jpg', '.jpeg']);
 export const PIPELINE_VERSION = 'asset-pipeline-v3';
+export const POSTER_PIPELINE_VERSION = 'poster-pipeline-v1';
+export const PREVIEW_PIPELINE_VERSION = 'preview-pipeline-v2';
+
+const DISPLAY_SIZE = 128;
 
 const MAX_SOURCE_BYTES = positiveInteger(process.env.TRAY_MAX_SOURCE_MB, 64) * 1024 * 1024;
 const MAX_FRAMES = positiveInteger(process.env.TRAY_MAX_FRAMES, 1000);
@@ -39,6 +43,27 @@ export function sourceFingerprint(sourceFilename, contents) {
         .update(sourceFilename)
         .update('\0')
         .update(contents)
+        .digest('hex');
+}
+
+export function displayFilename(assetFilename) {
+    return `${assetFilename}.webp`;
+}
+
+export function displayFingerprint(kind, assetFilename, assetFingerprint) {
+    const pipelineVersion = kind === 'poster'
+        ? POSTER_PIPELINE_VERSION
+        : kind === 'preview'
+            ? PREVIEW_PIPELINE_VERSION
+            : '';
+    if (!pipelineVersion) throw new Error(`Unsupported display asset kind: ${kind}`);
+
+    return createHash('sha256')
+        .update(pipelineVersion)
+        .update('\0')
+        .update(assetFilename)
+        .update('\0')
+        .update(assetFingerprint)
         .digest('hex');
 }
 
@@ -132,6 +157,65 @@ export async function buildAsset({ sourcePath, sourceFilename, destination, cach
             rm(passthrough, { force: true }),
         ]);
     }
+}
+
+export async function buildDisplayAssets({
+    sourcePath,
+    assetFilename,
+    assetFingerprint,
+    posterDestination,
+    previewDestination,
+    cacheRoot,
+}) {
+    const fingerprints = {
+        poster: displayFingerprint('poster', assetFilename, assetFingerprint),
+        preview: displayFingerprint('preview', assetFilename, assetFingerprint),
+    };
+    const destinations = {
+        poster: posterDestination,
+        preview: previewDestination,
+    };
+    const cachedPaths = {
+        poster: resolve(cacheRoot, 'posters', `${fingerprints.poster}.webp`),
+        preview: resolve(cacheRoot, 'previews', `${fingerprints.preview}.webp`),
+    };
+    const result = {};
+
+    for (const kind of ['poster', 'preview']) {
+        const cached = cachedPaths[kind];
+        const destination = destinations[kind];
+        await Promise.all([
+            mkdir(dirname(destination), { recursive: true }),
+            mkdir(dirname(cached), { recursive: true }),
+        ]);
+
+        const cacheHit = await isValidCachedWebp(cached);
+        if (!cacheHit) {
+            const temporary = `${cached}-${process.pid}-${randomUUID()}.tmp`;
+            try {
+                if (kind === 'poster') {
+                    await buildPoster(sourcePath, temporary);
+                } else {
+                    await buildPreview(sourcePath, temporary);
+                }
+                if (!await isValidCachedWebp(temporary)) {
+                    throw new Error(`${kind} pipeline did not produce a valid WebP for ${assetFilename}`);
+                }
+                await rename(temporary, cached);
+            } finally {
+                await rm(temporary, { force: true });
+            }
+        }
+
+        await copyFile(cached, destination);
+        result[kind] = {
+            cacheHit,
+            outputBytes: (await stat(cached)).size,
+            fingerprint: fingerprints[kind],
+        };
+    }
+
+    return result;
 }
 
 export function parseAni(contents) {
@@ -338,6 +422,49 @@ function isWebp(contents) {
         && contents.subarray(8, 12).toString('ascii') === 'WEBP';
 }
 
+async function buildPoster(source, destination) {
+    await sharp(source, { page: 0, limitInputPixels: MAX_FRAME_PIXELS })
+        .resize(DISPLAY_SIZE, DISPLAY_SIZE, {
+            fit: 'contain',
+            background: { r: 0, g: 0, b: 0, alpha: 0 },
+        })
+        .webp({
+            quality: 82,
+            alphaQuality: 90,
+            effort: 4,
+            smartSubsample: true,
+        })
+        .toFile(destination);
+}
+
+async function buildPreview(source, destination) {
+    const metadata = await sharp(source, {
+        animated: true,
+        limitInputPixels: MAX_TOTAL_PIXELS,
+    }).metadata();
+    const options = {
+        quality: 55,
+        alphaQuality: 80,
+        effort: 6,
+        smartSubsample: true,
+    };
+    if ((metadata.pages || 1) > 1) {
+        options.loop = metadata.loop ?? 0;
+        options.delay = metadata.delay;
+    }
+
+    await sharp(source, {
+        animated: true,
+        limitInputPixels: MAX_TOTAL_PIXELS,
+    })
+        .resize(DISPLAY_SIZE, DISPLAY_SIZE, {
+            fit: 'contain',
+            background: { r: 0, g: 0, b: 0, alpha: 0 },
+        })
+        .webp(options)
+        .toFile(destination);
+}
+
 function optimizeGif(source, destination) {
     const task = gifsicleQueue.then(() => runGifsicle(source, destination));
     gifsicleQueue = task.catch(() => {});
@@ -403,6 +530,14 @@ async function exists(path) {
 async function isValidCachedAsset(path, extension, sourceBytes) {
     if (!await exists(path)) return false;
     if (extension === '.gif' ? isGif(await readFile(path)) : (await stat(path)).size === sourceBytes) return true;
+    await rm(path, { force: true });
+    return false;
+}
+
+async function isValidCachedWebp(path) {
+    if (!await exists(path)) return false;
+    const contents = await readFile(path);
+    if (isWebp(contents)) return true;
     await rm(path, { force: true });
     return false;
 }

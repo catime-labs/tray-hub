@@ -2,24 +2,33 @@ import catalog from '../data/collections.json' with { type: 'json' };
 import assetLock from '../data/assets-lock.json' with { type: 'json' };
 
 export function createManifest(origin) {
-    const sections = Object.fromEntries(catalog.collections.map(collection => [
-        collection.key,
-        {
+    const sections = Object.fromEntries(catalog.collections.map(collection => {
+        const lock = assetLock.collections[collection.key] || {};
+        const displayFiles = collection.files.map(filename => `${filename}.webp`);
+        return [collection.key, {
             count: collection.files.length,
             authorAvatar: versionedPublicUrl(
                 collection.authorAvatar,
                 origin,
-                assetLock.collections[collection.key]?.avatar,
+                lock.avatar,
             ),
             authorLinks: normalizeAuthorLinks(collection.authorLinks),
             repository: collection.repository,
             cdnBase: `${origin}/assets/${encodeURIComponent(collection.key)}/`,
             files: collection.files,
             fileVersions: collection.files.map(filename =>
-                assetLock.collections[collection.key]?.files[filename]?.slice(0, 12) || ''),
+                lock.files?.[filename]?.slice(0, 12) || ''),
+            posterCdnBase: `${origin}/posters/${encodeURIComponent(collection.key)}/`,
+            posterFiles: displayFiles,
+            posterVersions: displayFiles.map(filename =>
+                lock.posters?.[filename]?.slice(0, 12) || ''),
+            previewCdnBase: `${origin}/previews/${encodeURIComponent(collection.key)}/`,
+            previewFiles: [...displayFiles],
+            previewVersions: displayFiles.map(filename =>
+                lock.previews?.[filename]?.slice(0, 12) || ''),
             updated: collection.updated,
-        },
-    ]));
+        }];
+    }));
 
     return {
         version: catalog.version,

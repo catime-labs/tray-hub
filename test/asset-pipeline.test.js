@@ -6,6 +6,9 @@ import test from 'node:test';
 import sharp from 'sharp';
 import {
     buildAsset,
+    buildDisplayAssets,
+    displayFilename,
+    displayFingerprint,
     outputFilename,
     parseAni,
     sourceFingerprint,
@@ -21,6 +24,18 @@ test('preserves image filenames and converts only ANI paths to GIF', () => {
     assert.equal(outputFilename('photo.jpeg'), 'photo.jpeg');
     assert.equal(outputFilename('animated.ani'), 'animated.gif');
     assert.throws(() => outputFilename('video.mp4'), /Unsupported/);
+});
+
+test('uses collision-safe WebP filenames and independent display fingerprints', () => {
+    assert.equal(displayFilename('1.gif'), '1.gif.webp');
+    assert.equal(displayFilename('nested/1.png'), 'nested/1.png.webp');
+
+    const poster = displayFingerprint('poster', '1.gif', 'source-hash');
+    const preview = displayFingerprint('preview', '1.gif', 'source-hash');
+    assert.match(poster, /^[a-f0-9]{64}$/);
+    assert.match(preview, /^[a-f0-9]{64}$/);
+    assert.notEqual(poster, preview);
+    assert.throws(() => displayFingerprint('unknown', '1.gif', 'source-hash'), /Unsupported/);
 });
 
 test('rejects oversized sources before reading them into the conversion pipeline', () => {
@@ -92,6 +107,64 @@ test('converts ANI cursor steps and timing to an animated GIF', async t => {
     assert.equal(metadata.format, 'gif');
     assert.equal(metadata.pages, 2);
     assert.deepEqual(metadata.delay, [100, 200]);
+});
+
+test('builds 128px static posters and timed animated previews with cache reuse', async t => {
+    const directory = await mkdtemp(join(tmpdir(), 'tray-display-'));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+
+    const source = join(directory, 'source.gif');
+    const cacheRoot = join(directory, 'cache');
+    const firstPoster = join(directory, 'first-poster.webp');
+    const firstPreview = join(directory, 'first-preview.webp');
+    const secondPoster = join(directory, 'second-poster.webp');
+    const secondPreview = join(directory, 'second-preview.webp');
+    const width = 8;
+    const height = 6;
+    const red = await sharp({ create: { width, height, channels: 4, background: '#ff0000' } }).raw().toBuffer();
+    const blue = await sharp({ create: { width, height, channels: 4, background: '#0000ff' } }).raw().toBuffer();
+    await sharp(Buffer.concat([red, blue]), {
+        raw: { width, height: height * 2, channels: 4, pageHeight: height },
+    }).gif({ delay: [80, 120], loop: 0 }).toFile(source);
+
+    const contents = await readFile(source);
+    const assetFingerprint = sourceFingerprint('source.gif', contents);
+    const first = await buildDisplayAssets({
+        sourcePath: source,
+        assetFilename: 'source.gif',
+        assetFingerprint,
+        posterDestination: firstPoster,
+        previewDestination: firstPreview,
+        cacheRoot,
+    });
+    const second = await buildDisplayAssets({
+        sourcePath: source,
+        assetFilename: 'source.gif',
+        assetFingerprint,
+        posterDestination: secondPoster,
+        previewDestination: secondPreview,
+        cacheRoot,
+    });
+
+    assert.equal(first.poster.cacheHit, false);
+    assert.equal(first.preview.cacheHit, false);
+    assert.equal(second.poster.cacheHit, true);
+    assert.equal(second.preview.cacheHit, true);
+    assert.deepEqual(await readFile(secondPoster), await readFile(firstPoster));
+    assert.deepEqual(await readFile(secondPreview), await readFile(firstPreview));
+
+    const posterMetadata = await sharp(firstPoster).metadata();
+    const previewMetadata = await sharp(firstPreview, { animated: true }).metadata();
+    assert.equal(posterMetadata.format, 'webp');
+    assert.equal(posterMetadata.width, 128);
+    assert.equal(posterMetadata.height, 128);
+    assert.equal(posterMetadata.pages, undefined);
+    assert.equal(previewMetadata.format, 'webp');
+    assert.equal(previewMetadata.width, 128);
+    assert.equal(previewMetadata.pageHeight, 128);
+    assert.equal(previewMetadata.pages, 2);
+    assert.deepEqual(previewMetadata.delay, [80, 120]);
+    assert.equal(previewMetadata.delay.reduce((sum, delay) => sum + delay, 0), 200);
 });
 
 function cursorPng(background) {

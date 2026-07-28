@@ -60,3 +60,15 @@ test('detects stale deployed file fingerprints', () => {
         baseUrl: 'https://tray.example',
     }), /eirna fileVersions/);
 });
+
+test('detects stale deployed display fingerprints', () => {
+    const manifest = createManifest('https://tray.example');
+    manifest.sections.eirna.previewVersions[0] = 'stale';
+
+    assert.throws(() => assertManifestMatchesCatalog({
+        manifest,
+        catalog,
+        assetLock,
+        baseUrl: 'https://tray.example',
+    }), /eirna previewVersions/);
+});
