@@ -83,3 +83,40 @@ test('allows direct and third-party access to public routes', async () => {
     assert.equal(thirdParty.status, 200);
     assert.equal(health.status, 200);
 });
+
+test('serves image bindings with immutable caching while preserving asset responses', async () => {
+    const requests = [];
+    const env = {
+        ALLOWED_ORIGIN: '*',
+        ASSETS: {
+            fetch: async request => {
+                requests.push(request);
+                if (new URL(request.url).pathname.endsWith('/missing.webp')) {
+                    return new Response('missing', { status: 404 });
+                }
+                return new Response('preview-bytes', {
+                    status: 206,
+                    headers: {
+                        'Content-Type': 'image/webp',
+                        'Content-Range': 'bytes 0-12/13',
+                    },
+                });
+            },
+        },
+    };
+    const response = await worker.fetch(new Request('https://tray.example/previews/eirna/1.gif.webp', {
+        headers: { Range: 'bytes=0-12' },
+    }), env);
+    const missing = await worker.fetch(new Request('https://tray.example/posters/eirna/missing.webp'), env);
+
+    assert.equal(response.status, 206);
+    assert.equal(await response.text(), 'preview-bytes');
+    assert.equal(requests[0].headers.get('Range'), 'bytes=0-12');
+    assert.equal(response.headers.get('Content-Type'), 'image/webp');
+    assert.equal(response.headers.get('Content-Range'), 'bytes 0-12/13');
+    assert.equal(response.headers.get('Access-Control-Allow-Origin'), '*');
+    assert.equal(response.headers.get('X-Content-Type-Options'), 'nosniff');
+    assert.equal(response.headers.get('Cache-Control'), 'public, max-age=31536000, immutable');
+    assert.equal(missing.status, 404);
+    assert.equal(missing.headers.get('Cache-Control'), 'no-store');
+});

@@ -12,6 +12,7 @@ on:
       - '.github/workflows/sync.yml'
       - 'package-lock.json'
       - 'package.json'
+      - 'public/_headers'
       - 'README.md'
       - 'scripts/read-author-info.mjs'
       - 'scripts/catalog-metadata.mjs'
@@ -23,6 +24,8 @@ on:
       - 'scripts/stage-assets.mjs'
       - 'scripts/verify-deployment.mjs'
       - 'src/catalog.js'
+      - 'src/index.js'
+      - 'wrangler.jsonc'
 
 permissions:
   contents: write

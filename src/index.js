@@ -1,6 +1,8 @@
 import { createManifest } from './catalog.js';
 
 const JSON_CACHE_CONTROL = 'public, max-age=300, s-maxage=3600, stale-while-revalidate=86400, stale-if-error=604800';
+const IMMUTABLE_CACHE_CONTROL = 'public, max-age=31536000, immutable';
+const ASSET_PREFIXES = ['/assets/', '/avatars/', '/posters/', '/previews/'];
 
 export default {
     async fetch(request, env = {}, context = {}) {
@@ -32,9 +34,31 @@ export default {
             });
         }
 
+        if (ASSET_PREFIXES.some(prefix => url.pathname.startsWith(prefix))) {
+            return serveAsset(request, env, cors);
+        }
+
         return json({ error: 'Not found' }, 404, cors, { method: request.method });
     },
 };
+
+async function serveAsset(request, env, cors) {
+    if (!env.ASSETS?.fetch) return json({ error: 'Asset binding unavailable' }, 503, cors, { method: request.method });
+
+    const response = await env.ASSETS.fetch(request);
+    const headers = new Headers(response.headers);
+    Object.entries(cors).forEach(([name, value]) => headers.set(name, value));
+    headers.set('X-Content-Type-Options', 'nosniff');
+    headers.set(
+        'Cache-Control',
+        response.status >= 200 && response.status < 400 ? IMMUTABLE_CACHE_CONTROL : 'no-store',
+    );
+    return new Response(request.method === 'HEAD' ? null : response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+    });
+}
 
 function json(payload, status, cors, { headers: extraHeaders = {}, method = 'GET' } = {}) {
     const body = JSON.stringify(payload, null, 2);
