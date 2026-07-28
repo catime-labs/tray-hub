@@ -13,7 +13,11 @@ export function createManifest(origin) {
             title: collection.title,
             author: collection.author,
             authorBio: collection.authorBio || '',
-            authorAvatar: resolvePublicUrl(collection.authorAvatar, origin),
+            authorAvatar: versionedPublicUrl(
+                collection.authorAvatar,
+                origin,
+                assetLock.collections[collection.key]?.avatar,
+            ),
             authorUrl: resolvePublicUrl(collection.authorUrl),
             authorTag: collection.authorTag || '',
             authorLinks: normalizeAuthorLinks(collection.authorLinks),
@@ -43,6 +47,14 @@ export function resolvePublicUrl(value, base) {
     } catch {
         return '';
     }
+}
+
+function versionedPublicUrl(value, base, fingerprint) {
+    const publicUrl = resolvePublicUrl(value, base);
+    if (!publicUrl || !fingerprint) return publicUrl;
+    const url = new URL(publicUrl);
+    url.searchParams.set('v', fingerprint.slice(0, 12));
+    return url.toString();
 }
 
 function normalizeAuthorLinks(links) {

@@ -1,47 +1,57 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {
-    TRAY_REPOSITORY_TOPIC,
-    discoveryRecord,
-    inspectRepository,
-    isLocalRepositoryOptedIn,
-    isRemoteRepositoryOptedIn,
-} from '../scripts/repository-discovery.mjs';
+import { discoveryRecord, inspectRepository } from '../scripts/repository-discovery.mjs';
 
-const assetTree = {
+const completeTree = {
     sha: 'abc123',
     truncated: false,
-    tree: [{ type: 'blob', path: 'nested/1.png' }],
+    tree: [
+        { type: 'blob', path: 'README.md' },
+        { type: 'blob', path: 'a.webp' },
+        { type: 'blob', path: 'nested/1.png' },
+    ],
 };
 
-test('requires explicit opt-in before discovering image repositories', () => {
-    const unrelated = inspectRepository({ name: 'website', topics: [] }, assetTree);
-    const known = inspectRepository({ name: 'eirna', topics: [] }, assetTree, new Set(['eirna']));
-    const topic = inspectRepository({ name: 'new-art', topics: [TRAY_REPOSITORY_TOPIC] }, assetTree);
-    const marker = inspectRepository({ name: 'marked', topics: [] }, {
-        ...assetTree,
-        tree: [...assetTree.tree, { type: 'blob', path: 'tray.json' }],
+test('automatically discovers public repositories using the author folder structure', () => {
+    assert.deepEqual(inspectRepository(completeTree), {
+        hasReadme: true,
+        hasAvatar: true,
+        hasAssets: true,
+        shouldCheckout: true,
     });
-
-    assert.equal(unrelated.shouldCheckout, false);
-    assert.equal(known.shouldCheckout, true);
-    assert.equal(topic.shouldCheckout, true);
-    assert.equal(marker.shouldCheckout, true);
 });
 
-test('supports marker checks without scanning an unrelated repository tree', () => {
-    const repository = { name: 'marked', topics: [] };
-    assert.equal(isRemoteRepositoryOptedIn(repository, new Set(), false), false);
-    assert.equal(isRemoteRepositoryOptedIn(repository, new Set(), true), true);
-    assert.equal(inspectRepository(repository, assetTree, new Set(), { hasMarker: true }).shouldCheckout, true);
+test('requires README, a root avatar, and at least one separate animation asset', () => {
+    const withoutReadme = { ...completeTree, tree: completeTree.tree.filter(entry => entry.path !== 'README.md') };
+    const withoutAvatar = { ...completeTree, tree: completeTree.tree.filter(entry => entry.path !== 'a.webp') };
+    const withoutAssets = { ...completeTree, tree: completeTree.tree.filter(entry => entry.path === 'README.md' || entry.path === 'a.webp') };
+
+    assert.equal(inspectRepository(withoutReadme).shouldCheckout, false);
+    assert.equal(inspectRepository(withoutAvatar).shouldCheckout, false);
+    assert.equal(inspectRepository(withoutAssets).shouldCheckout, false);
 });
 
-test('keeps opted-in truncated trees for validation after checkout', () => {
-    const inspection = inspectRepository(
-        { name: 'large', topics: [TRAY_REPOSITORY_TOPIC] },
-        { tree: [], truncated: true },
-    );
-    assert.equal(inspection.shouldCheckout, true);
+test('does not mistake the reserved root avatar for an animation', () => {
+    const avatarOnly = {
+        tree: [
+            { type: 'blob', path: 'README.md' },
+            { type: 'blob', path: 'a.png' },
+        ],
+    };
+    const nestedAnimation = {
+        tree: [
+            ...avatarOnly.tree,
+            { type: 'blob', path: 'nested/a.png' },
+        ],
+    };
+
+    assert.equal(inspectRepository(avatarOnly).hasAssets, false);
+    assert.equal(inspectRepository(nestedAnimation).shouldCheckout, true);
+});
+
+test('does not clone an unrelated truncated repository without the required structure', () => {
+    assert.equal(inspectRepository({ tree: [], truncated: true }).shouldCheckout, false);
+    assert.equal(inspectRepository(null).shouldCheckout, false);
 });
 
 test('records authoritative GitHub repository source metadata', () => {
@@ -49,21 +59,9 @@ test('records authoritative GitHub repository source metadata', () => {
         name: 'artist',
         html_url: 'https://github.com/catime-labs/artist',
         default_branch: 'artwork',
-    }, assetTree), {
+    }, completeTree), {
         repository: 'https://github.com/catime-labs/artist',
         branch: 'artwork',
         commit: 'abc123',
     });
-});
-
-test('uses the same explicit opt-in boundary for local sibling repositories', () => {
-    const options = {
-        knownCollections: new Map([['known', {}]]),
-        discoveredRepositories: { discovered: {} },
-        hasMarker: false,
-    };
-    assert.equal(isLocalRepositoryOptedIn('known', options), true);
-    assert.equal(isLocalRepositoryOptedIn('discovered', options), true);
-    assert.equal(isLocalRepositoryOptedIn('unrelated', options), false);
-    assert.equal(isLocalRepositoryOptedIn('marked', { ...options, hasMarker: true }), true);
 });

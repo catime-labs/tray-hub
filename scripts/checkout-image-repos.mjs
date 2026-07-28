@@ -1,11 +1,10 @@
 import { spawn } from 'node:child_process';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
     discoveryRecord,
     inspectRepository,
-    isRemoteRepositoryOptedIn,
 } from './repository-discovery.mjs';
 
 const organization = process.env.TRAY_GITHUB_ORG || 'catime-labs';
@@ -16,8 +15,6 @@ const destinationRoot = process.env.TRAY_ASSET_ROOT
     ? resolve(process.env.TRAY_ASSET_ROOT)
     : root;
 const discoveryPath = resolve(projectRoot, '.cache/discovered-repositories.json');
-const catalog = JSON.parse(await readFile(resolve(projectRoot, 'data/collections.json'), 'utf8'));
-const knownCollections = new Set((catalog.collections || []).map(collection => collection.key));
 const headers = {
     Accept: 'application/vnd.github+json',
     'User-Agent': 'catime-labs/tray-hub',
@@ -27,18 +24,17 @@ if (token) headers.Authorization = `Bearer ${token}`;
 
 const repositories = await listRepositories();
 const candidates = repositories.filter(repository =>
-    repository.name !== 'tray-hub' && !repository.archived && !repository.disabled && !repository.fork);
+    repository.name !== 'tray-hub'
+    && repository.default_branch
+    && !repository.archived
+    && !repository.disabled
+    && !repository.fork);
 const inspected = await mapLimit(candidates, 6, async repository => {
-    let hasMarker = false;
-    if (!isRemoteRepositoryOptedIn(repository, knownCollections)) {
-        hasMarker = await containsTrayMarker(repository);
-        if (!hasMarker) return null;
-    }
     const tree = await repositoryTree(repository);
     return {
         repository,
         tree,
-        inspection: inspectRepository(repository, tree, knownCollections, { hasMarker }),
+        inspection: inspectRepository(tree),
     };
 });
 const selected = inspected.filter(item => item?.inspection.shouldCheckout);
@@ -57,11 +53,11 @@ await mapLimit(selected, 2, async ({ repository, tree }) => {
 });
 
 if (selected.length === 0) {
-    throw new Error(`No opted-in public tray asset repositories found in ${organization}`);
+    throw new Error(`No public repositories matching the tray author structure were found in ${organization}`);
 }
 await mkdir(resolve(projectRoot, '.cache'), { recursive: true });
 await writeFile(discoveryPath, `${JSON.stringify(discovery, null, 2)}\n`);
-console.log(`Discovered ${selected.length} opted-in image repositories.`);
+console.log(`Automatically discovered ${selected.length} public tray repositories.`);
 
 async function listRepositories() {
     const repositories = [];
@@ -75,20 +71,13 @@ async function listRepositories() {
 function repositoryTree(repository) {
     return githubApi(
         `/repos/${repository.full_name}/git/trees/${encodeURIComponent(repository.default_branch)}?recursive=1`,
+        { allowStatuses: [404, 409] },
     );
 }
 
-async function containsTrayMarker(repository) {
-    const marker = await githubApi(
-        `/repos/${repository.full_name}/contents/tray.json?ref=${encodeURIComponent(repository.default_branch)}`,
-        { allowNotFound: true },
-    );
-    return marker?.type === 'file';
-}
-
-async function githubApi(path, { allowNotFound = false } = {}) {
+async function githubApi(path, { allowStatuses = [] } = {}) {
     const response = await fetch(`https://api.github.com${path}`, { headers });
-    if (allowNotFound && response.status === 404) return null;
+    if (allowStatuses.includes(response.status)) return null;
     if (!response.ok) throw new Error(`GitHub API ${path} returned ${response.status}`);
     return response.json();
 }

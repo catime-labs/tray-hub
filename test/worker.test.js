@@ -20,7 +20,10 @@ test('serves a website-compatible manifest', async () => {
     assert.deepEqual(manifest.sections.eirna.authorLinks, [
         { label: 'Bilibili', url: 'https://space.bilibili.com/1195508399' },
     ]);
-    assert.equal(manifest.sections.eirna.authorAvatar, 'https://tray.example/avatars/eirna.webp');
+    assert.match(
+        manifest.sections.eirna.authorAvatar,
+        /^https:\/\/tray\.example\/avatars\/eirna\/a\.webp\?v=[a-f0-9]{12}$/,
+    );
     assert.equal(manifest.sections.eirna.cdnBase, 'https://tray.example/assets/eirna/');
 });
 
@@ -62,7 +65,7 @@ test('tolerates invalid repository metadata when building display names', () => 
 
 test('only publishes HTTP or HTTPS profile and avatar URLs', () => {
     assert.equal(resolvePublicUrl('javascript:alert(1)'), '');
-    assert.equal(resolvePublicUrl('/avatars/eirna.webp', 'https://tray.example'), 'https://tray.example/avatars/eirna.webp');
+    assert.equal(resolvePublicUrl('/avatars/eirna/a.webp', 'https://tray.example'), 'https://tray.example/avatars/eirna/a.webp');
     assert.equal(resolvePublicUrl('https://example.com/profile'), 'https://example.com/profile');
 });
 

@@ -12,7 +12,7 @@ export const PIPELINE_VERSION = 'asset-pipeline-v3';
 const MAX_SOURCE_BYTES = positiveInteger(process.env.TRAY_MAX_SOURCE_MB, 64) * 1024 * 1024;
 const MAX_FRAMES = positiveInteger(process.env.TRAY_MAX_FRAMES, 1000);
 const MAX_FRAME_PIXELS = positiveInteger(process.env.TRAY_MAX_FRAME_PIXELS, 4_194_304);
-const MAX_TOTAL_PIXELS = positiveInteger(process.env.TRAY_MAX_TOTAL_PIXELS, 12_000_000);
+const MAX_TOTAL_PIXELS = positiveInteger(process.env.TRAY_MAX_TOTAL_PIXELS, 48_000_000);
 const require = createRequire(import.meta.url);
 const gifsicleMessages = [];
 let gifsicleModule;
@@ -65,7 +65,10 @@ export async function validateSource(sourceFilename, contents) {
     if (extension === '.gif' && !isGif(contents)) throw new Error(`${sourceFilename} is not a GIF file`);
     if (extension === '.webp' && !isWebp(contents)) throw new Error(`${sourceFilename} is not a WebP file`);
 
-    const metadata = await sharp(contents, { animated: true, limitInputPixels: MAX_FRAME_PIXELS }).metadata();
+    // Sharp sees an animated image as one vertically stacked image, so its
+    // decoder limit must use the total animation budget. Per-frame dimensions
+    // are checked independently below using pageHeight.
+    const metadata = await sharp(contents, { animated: true, limitInputPixels: MAX_TOTAL_PIXELS }).metadata();
     const expectedFormat = extension === '.jpg' || extension === '.jpeg' ? 'jpeg' : extension.slice(1);
     if (metadata.format !== expectedFormat) throw new Error(`${sourceFilename} is not a valid ${extension.slice(1).toUpperCase()} file`);
     const frames = metadata.pages || 1;

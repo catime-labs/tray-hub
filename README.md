@@ -2,13 +2,6 @@
 
 Cloudflare Worker registry and static asset service for Catime tray animations.
 
-## Author Information
-
-### eirna
-
-- Avatar: eirna.webp
-- [Bilibili](https://space.bilibili.com/1195508399)
-
 ## API
 
 - `GET /sections.json` returns the website-compatible collection manifest.
@@ -36,11 +29,17 @@ npm run dev
 
 ## Image repository discovery
 
-Image repositories live next to `tray-hub`. Existing catalog entries remain
-eligible automatically. A new public repository must explicitly opt in by
-adding the `catime-tray-assets` GitHub topic or a `tray.json` file at its root.
-This prevents screenshots and icons in unrelated organization repositories from
-being published as tray assets.
+Image repositories live next to `tray-hub`. The scheduled discovery scans every
+public, non-archived, non-fork repository in `catime-labs`. A repository is
+included automatically when its root contains all three parts of the author
+folder structure:
+
+1. A root `README.md` for author links (it may be empty).
+2. Exactly one root avatar named `a.gif`, `a.webp`, `a.png`, `a.jpg`, or
+   `a.jpeg`.
+3. At least one supported animation image other than that avatar.
+
+No catalog edit, GitHub topic, or marker file is required when adding an author.
 
 ```text
 workspace/
@@ -48,22 +47,18 @@ workspace/
 ├── eirna/
 │   ├── 1.gif
 │   ├── 2.webp
-│   └── 3.ani
+│   ├── 3.ani
+│   ├── a.webp
+│   └── README.md
 └── another-collection/
-    ├── tray.json
+    ├── README.md
+    ├── a.png
     └── nested/1.webp
 ```
 
-An empty JSON object is a valid marker for centrally managed collections:
-
-```json
-{}
-```
-
-The scheduled GitHub discovery records the repository URL and its actual
-default branch. Optional `repository` and `branch` values in `tray.json` are
-used only for local sibling-repository builds, must use a public HTTPS URL, and
-are validated before entering the catalog.
+The scheduled GitHub discovery records each matching repository URL and its
+actual default branch before cloning it. Repositories that do not match the
+three-part structure are ignored, even if they contain screenshots or icons.
 
 Image repositories may contain `.gif`, `.webp`, `.png`, `.jpg`, `.jpeg`, and
 Windows animated cursor `.ani` files. `npm run stage` recursively scans those
@@ -72,6 +67,27 @@ assets to the ignored `public/assets` staging folder. Image filenames,
 extensions, and subdirectories are preserved, and numeric filenames are sorted
 naturally. ANI sources are the only exception: browsers cannot display them
 directly, so each ANI file is published under the same basename with `.gif`.
+
+Each image repository owns its author information. Put one root-level avatar
+named `a.gif`, `a.webp`, `a.png`, `a.jpg`, or `a.jpeg` beside the animations.
+The `a.*` file is validated and published as the author avatar, and is never
+included in the animation list. Replacing, renaming, or removing it is picked
+up automatically on the next asset sync.
+
+Put author profile links in the repository's root `README.md`, with one plain
+URL on each line. No heading or other fixed structure is required. Bilibili,
+Pixiv, and X/Twitter links are labelled automatically; other sites use their
+hostname. Markdown links can still provide a custom label when needed:
+
+```markdown
+https://space.bilibili.com/1195508399
+https://www.pixiv.net/users/123
+https://x.com/example
+[Portfolio](https://example.com/artist)
+```
+
+Bulleted versions of those lines are also accepted. Links embedded in prose or
+images are ignored, so the rest of the README can be written normally.
 
 Existing GIF files are passed through Gifsicle WASM with `-O3`, which performs
 lossless GIF structure optimization without a platform-specific binary
@@ -92,14 +108,7 @@ bounded. The following optional environment variables tune the safety limits:
 - `TRAY_MAX_SOURCE_MB` (default `64`)
 - `TRAY_MAX_FRAMES` (default `1000`)
 - `TRAY_MAX_FRAME_PIXELS` (default `4194304`)
-- `TRAY_MAX_TOTAL_PIXELS` (default `12000000`)
-
-Author links and avatars are maintained centrally in the `Author Information`
-section at the top of this README. Each `###` heading must match an image
-repository name. Avatar source files live in the root `avatars/` directory.
-Avatar filenames are unrestricted; use any filename and image extension, then
-write only that filename after `Avatar:`. Image repositories only need to
-maintain their GIF, WebP, PNG, JPEG, and ANI source files.
+- `TRAY_MAX_TOTAL_PIXELS` (default `48000000`)
 
 ## Cloudflare deployment
 
@@ -129,7 +138,7 @@ Cloudflare Workers build.
 
 ## Automatic asset checks
 
-The `Sync tray assets` workflow runs every 30 minutes. It checks opted-in public
+The `Sync tray assets` workflow runs every 30 minutes. It checks matching public
 repositories in `catime-labs`, validates their GIF, WebP, PNG, JPEG, and ANI
 sources, and compares `data/assets-lock.json`, which stores a versioned SHA-256
 fingerprint for every output. Repository tree checks and clones use bounded
@@ -140,9 +149,9 @@ lets Cloudflare's Git integration perform the one required conversion and
 deployment.
 
 The Action does not call Cloudflare and requires no Cloudflare API token.
-`GITHUB_TOKEN` is supplied automatically by GitHub. Add the
-`catime-tray-assets` topic or a root `tray.json` marker to register a new public
-image repository without editing `tray-hub`.
+`GITHUB_TOKEN` is supplied automatically by GitHub. Creating a public repository
+with `README.md`, `a.*`, and at least one animation is enough to register it
+without editing `tray-hub`.
 
 The workflow can also be started manually or through a
 `tray-assets-updated` repository dispatch event. Scheduled checks require no

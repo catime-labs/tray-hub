@@ -1,9 +1,8 @@
-export function resolveCollectionSource({ name, organization, metadata = {}, previous = {}, discovered = {} }) {
+export function resolveCollectionSource({ name, organization, previous = {}, discovered = {} }) {
     const repository = discovered.repository
-        || metadata.repository
         || previous.repository
         || `https://github.com/${organization}/${name}`;
-    const branch = discovered.branch || metadata.branch || previous.branch || 'main';
+    const branch = discovered.branch || previous.branch || 'main';
 
     return {
         repository: validateRepositoryUrl(repository, name),
