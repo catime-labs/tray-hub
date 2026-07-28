@@ -112,11 +112,16 @@ bounded. The following optional environment variables tune the safety limits:
 
 ## Cloudflare deployment
 
-Connect the public `tray-hub` repository to Cloudflare Workers Builds. The
-deploy command can remain `npx wrangler deploy`; `wrangler.jsonc` runs the
-asset build automatically before every deployment. That build checks out the
-public image repositories recorded in the catalog next to `tray-hub`, and
-generates all web-ready outputs in Cloudflare Static Assets.
+The `Deploy tray hub` GitHub Action deploys the Worker and static assets on
+every `main` push. Add these two repository secrets once:
+
+- `CLOUDFLARE_API_TOKEN` with Workers deploy permissions.
+- `CLOUDFLARE_ACCOUNT_ID` set to the Cloudflare account that owns `tray.cati.me`.
+
+The deploy command is `npx wrangler deploy`; `wrangler.jsonc` runs the asset
+build automatically before every deployment. That build checks out the public
+image repositories recorded in the catalog next to `tray-hub`, and generates
+all web-ready outputs in Cloudflare Static Assets.
 
 For a manual deployment from a local sibling-repository workspace, run:
 
@@ -148,10 +153,10 @@ commits the updated catalog and lock file back to `tray-hub`. That Git push then
 lets Cloudflare's Git integration perform the one required conversion and
 deployment.
 
-The Action does not call Cloudflare and requires no Cloudflare API token.
-`GITHUB_TOKEN` is supplied automatically by GitHub. Creating a public repository
-with `README.md`, `a.*`, and at least one animation is enough to register it
-without editing `tray-hub`.
+The asset sync Action uses the automatically supplied `GITHUB_TOKEN` to inspect
+public repositories. Creating a public repository with `README.md`, `a.*`, and
+at least one animation is enough to register it without editing `tray-hub`;
+the resulting catalog commit then starts the deployment Action.
 
 The workflow can also be started manually or through a
 `tray-assets-updated` repository dispatch event. Scheduled checks require no
