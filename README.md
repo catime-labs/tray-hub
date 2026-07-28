@@ -113,16 +113,12 @@ bounded. The following optional environment variables tune the safety limits:
 
 ## Cloudflare deployment
 
-The `Deploy tray hub` GitHub Action deploys the Worker and static assets on
-every `main` push. Add these two repository secrets once:
-
-- `CLOUDFLARE_API_TOKEN` with Workers deploy permissions.
-- `CLOUDFLARE_ACCOUNT_ID` set to the Cloudflare account that owns `tray.cati.me`.
-
-The deploy command is `npx wrangler deploy`; `wrangler.jsonc` runs the asset
-build automatically before every deployment. That build checks out the public
-image repositories recorded in the catalog next to `tray-hub`, and generates
-all web-ready outputs in Cloudflare Static Assets.
+Connect the public `tray-hub` repository to Cloudflare Workers Builds. The
+deploy command is `npx wrangler deploy`; `wrangler.jsonc` runs the asset build
+automatically before every deployment. That build checks out the public image
+repositories recorded in the catalog next to `tray-hub`, and generates all
+web-ready outputs in Cloudflare Static Assets. No Cloudflare secrets are needed
+in GitHub Actions because Cloudflare owns the Git-triggered deployment.
 
 For a manual deployment from a local sibling-repository workspace, run:
 
@@ -139,7 +135,8 @@ the deployed Worker never fetches images from GitHub at runtime.
 
 Updating or adding a sibling image repository is picked up automatically the
 next time `npm run deploy` is run. The automatic workflow described below also
-detects those changes and updates `tray-hub`, which triggers the deploy Action.
+detects those changes and updates `tray-hub`, which triggers Cloudflare's Git
+integration.
 
 ## Automatic asset checks
 
@@ -152,9 +149,9 @@ parallelism. The scheduled check skips conversion to avoid spending CPU every
 commits the updated catalog and lock file back to `tray-hub`. It also compares
 the public manifest with that catalog; if Git is already current but the
 deployment is missing an author or serving stale files, it creates a redeploy
-request instead of reporting that everything is synchronized. Because the
-catalog commit uses `GITHUB_TOKEN`, the workflow dispatches `deploy.yml`
-explicitly after a change; it does not rely on a second `push` trigger.
+commit instead of reporting that everything is synchronized. Both catalog and
+redeploy commits are ordinary `main` pushes seen by Cloudflare's Git
+integration, so no deployment token is stored in GitHub.
 
 The asset sync Action uses the automatically supplied `GITHUB_TOKEN` to inspect
 public repositories. Creating a public repository with `README.md`, `a.*`, and
