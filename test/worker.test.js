@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import catalog from '../data/collections.json' with { type: 'json' };
-import { repositoryName, resolvePublicUrl } from '../src/catalog.js';
+import { resolvePublicUrl } from '../src/catalog.js';
 import worker from '../src/index.js';
 
 const eirna = catalog.collections.find(collection => collection.key === 'eirna');
@@ -16,6 +16,8 @@ test('serves a website-compatible manifest', async () => {
     assert.ok(eirna?.files.length > 0);
     assert.equal(manifest.sections.eirna.count, eirna.files.length);
     assert.deepEqual(manifest.sections.eirna.files, eirna.files);
+    assert.equal('author' in manifest.sections.eirna, false);
+    assert.equal('title' in manifest.sections.eirna, false);
     assert.match(manifest.sections.eirna.fileVersions[0], /^[a-f0-9]{12}$/);
     assert.deepEqual(manifest.sections.eirna.authorLinks, [
         { label: 'Bilibili', url: 'https://space.bilibili.com/1195508399' },
@@ -27,19 +29,12 @@ test('serves a website-compatible manifest', async () => {
     assert.equal(manifest.sections.eirna.cdnBase, 'https://tray.example/assets/eirna/');
 });
 
-test('redirects registered legacy asset routes to static assets', async () => {
-    const filename = eirna.files[0];
-    const encodedFilename = filename.split('/').map(encodeURIComponent).join('/');
-    const response = await worker.fetch(new Request(`https://tray.example/v1/assets/eirna/${encodedFilename}?v=abc`));
+test('does not expose the removed v1 compatibility routes', async () => {
+    const manifestAlias = await worker.fetch(new Request('https://tray.example/v1/collections'));
+    const assetAlias = await worker.fetch(new Request('https://tray.example/v1/assets/eirna/1.gif'));
 
-    assert.equal(response.status, 307);
-    assert.equal(response.headers.get('Location'), `https://tray.example/assets/eirna/${encodedFilename}?v=abc`);
-});
-
-test('rejects unknown assets', async () => {
-    const response = await worker.fetch(new Request('https://tray.example/v1/assets/eirna/missing.gif'));
-
-    assert.equal(response.status, 404);
+    assert.equal(manifestAlias.status, 404);
+    assert.equal(assetAlias.status, 404);
 });
 
 test('handles preflight and unsupported methods', async () => {
@@ -52,26 +47,16 @@ test('handles preflight and unsupported methods', async () => {
 });
 
 test('returns empty bodies for HEAD requests on every JSON route', async () => {
-    for (const path of ['/health', '/sections.json', '/missing', '/v1/assets/eirna/missing.gif']) {
+    for (const path of ['/health', '/sections.json', '/missing']) {
         const response = await worker.fetch(new Request(`https://tray.example${path}`, { method: 'HEAD' }));
         assert.equal(await response.text(), '');
     }
-});
-
-test('tolerates invalid repository metadata when building display names', () => {
-    assert.equal(repositoryName('not a URL'), '');
-    assert.equal(repositoryName('https://github.com/catime-labs/eirna'), 'eirna');
 });
 
 test('only publishes HTTP or HTTPS profile and avatar URLs', () => {
     assert.equal(resolvePublicUrl('javascript:alert(1)'), '');
     assert.equal(resolvePublicUrl('/avatars/eirna/a.webp', 'https://tray.example'), 'https://tray.example/avatars/eirna/a.webp');
     assert.equal(resolvePublicUrl('https://example.com/profile'), 'https://example.com/profile');
-});
-
-test('returns a client error for malformed asset paths', async () => {
-    const response = await worker.fetch(new Request('https://tray.example/v1/assets/eirna/%E0%A4%A'));
-    assert.equal(response.status, 400);
 });
 
 test('allows direct and third-party access to public routes', async () => {

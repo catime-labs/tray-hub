@@ -5,8 +5,8 @@ export function inspectRepository(tree) {
     const paths = entries
         .filter(entry => entry.type === 'blob' && typeof entry.path === 'string')
         .map(entry => entry.path);
-    const hasReadme = paths.some(isRootReadme);
-    const hasAvatar = paths.some(isAuthorAvatarFilename);
+    const hasReadme = paths.filter(isRootReadme).length === 1;
+    const hasAvatar = paths.filter(isAuthorAvatarFilename).length === 1;
     const hasAssets = paths.some(isTrayAssetPath);
 
     return {

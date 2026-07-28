@@ -1,4 +1,7 @@
+import catalog from '../data/collections.json' with { type: 'json' };
+import assetLock from '../data/assets-lock.json' with { type: 'json' };
 import { assertPublishedAsset, selectFormatSamples } from './asset-signature.mjs';
+import { assertManifestMatchesCatalog } from './deployment-catalog.mjs';
 
 const baseUrl = (process.env.TRAY_HUB_URL || 'https://tray.cati.me').replace(/\/$/, '');
 const verificationId = process.env.TRAY_VERIFY_TOKEN || Date.now().toString(36);
@@ -26,29 +29,38 @@ async function verify() {
     const manifestResponse = await fetch(`${baseUrl}/sections.json?verify=${verificationId}`, { cache: 'no-store' });
     if (!manifestResponse.ok) throw new Error(`manifest returned ${manifestResponse.status}`);
     const manifest = await manifestResponse.json();
+    assertManifestMatchesCatalog({ manifest, catalog, assetLock, baseUrl });
     const sections = Object.values(manifest.sections || {});
     if (sections.length === 0) throw new Error('manifest contains no collections');
 
     for (const section of sections) {
         if (!Array.isArray(section.files) || section.files.length === 0) {
-            throw new Error(`${section.title || 'collection'} contains no files`);
+            throw new Error(`${section.repository || 'collection'} contains no files`);
         }
+        if (!section.authorAvatar) throw new Error(`${section.repository || 'collection'} contains no author avatar`);
+        const avatarUrl = new URL(section.authorAvatar);
+        await verifyPublishedAsset(avatarUrl.toString(), avatarUrl.pathname);
+
         for (const sample of selectFormatSamples(section.files)) {
             const filename = sample.filename.split('/').map(encodeURIComponent).join('/');
             const version = section.fileVersions?.[sample.index] || verificationId;
             const assetUrl = `${section.cdnBase}${filename}?v=${version}`;
-            const asset = await fetch(assetUrl, {
-                cache: 'no-store',
-                headers: { Range: 'bytes=0-11' },
-            });
-            if (!asset.ok) throw new Error(`${assetUrl} returned ${asset.status}`);
-            assertPublishedAsset(
-                sample.filename,
-                asset.headers.get('Content-Type'),
-                await readPrefix(asset, 12),
-            );
+            await verifyPublishedAsset(assetUrl, sample.filename);
         }
     }
+}
+
+async function verifyPublishedAsset(assetUrl, filename) {
+    const asset = await fetch(assetUrl, {
+        cache: 'no-store',
+        headers: { Range: 'bytes=0-11' },
+    });
+    if (!asset.ok) throw new Error(`${assetUrl} returned ${asset.status}`);
+    assertPublishedAsset(
+        filename,
+        asset.headers.get('Content-Type'),
+        await readPrefix(asset, 12),
+    );
 }
 
 async function readPrefix(response, length) {

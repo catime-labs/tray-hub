@@ -1,4 +1,4 @@
-import { createManifest, findCollection } from './catalog.js';
+import { createManifest } from './catalog.js';
 
 const JSON_CACHE_CONTROL = 'public, max-age=300, s-maxage=3600, stale-while-revalidate=86400, stale-if-error=604800';
 
@@ -25,49 +25,16 @@ export default {
             return json(payload, 200, cors, { method: request.method });
         }
 
-        if (url.pathname === '/sections.json' || url.pathname === '/v1/collections') {
+        if (url.pathname === '/sections.json') {
             return json(createManifest(url.origin), 200, cors, {
                 method: request.method,
                 headers: { 'Cache-Control': JSON_CACHE_CONTROL },
             });
         }
 
-        const match = url.pathname.match(/^\/v1\/assets\/([^/]+)\/(.+)$/);
-        if (match) {
-            try {
-                return redirectAsset(
-                    url,
-                    decodeURIComponent(match[1]),
-                    decodeURIComponent(match[2]),
-                    cors,
-                    request.method,
-                );
-            } catch {
-                return json({ error: 'Invalid asset path' }, 400, cors, { method: request.method });
-            }
-        }
-
         return json({ error: 'Not found' }, 404, cors, { method: request.method });
     },
 };
-
-function redirectAsset(url, collectionKey, filename, cors, method) {
-    const collection = findCollection(collectionKey);
-    if (!collection || !collection.files.includes(filename)) {
-        return json({ error: 'Asset not found' }, 404, cors, { method });
-    }
-
-    const assetUrl = new URL(url);
-    assetUrl.pathname = `/assets/${encodeURIComponent(collection.key)}/${filename.split('/').map(encodeURIComponent).join('/')}`;
-    return new Response(null, {
-        status: 307,
-        headers: {
-            Location: assetUrl.toString(),
-            'Cache-Control': 'public, max-age=300',
-            ...cors,
-        },
-    });
-}
 
 function json(payload, status, cors, { headers: extraHeaders = {}, method = 'GET' } = {}) {
     const body = JSON.stringify(payload, null, 2);

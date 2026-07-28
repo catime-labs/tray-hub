@@ -49,6 +49,34 @@ test('does not mistake the reserved root avatar for an animation', () => {
     assert.equal(inspectRepository(nestedAnimation).shouldCheckout, true);
 });
 
+test('does not discover repositories with ambiguous root avatars', () => {
+    const ambiguous = {
+        tree: [
+            { type: 'blob', path: 'README.md' },
+            { type: 'blob', path: 'a.png' },
+            { type: 'blob', path: 'A.jpg' },
+            { type: 'blob', path: '1.gif' },
+        ],
+    };
+
+    assert.equal(inspectRepository(ambiguous).hasAvatar, false);
+    assert.equal(inspectRepository(ambiguous).shouldCheckout, false);
+});
+
+test('does not discover repositories with ambiguous root README casing', () => {
+    const ambiguous = {
+        tree: [
+            { type: 'blob', path: 'README.md' },
+            { type: 'blob', path: 'readme.md' },
+            { type: 'blob', path: 'a.webp' },
+            { type: 'blob', path: '1.gif' },
+        ],
+    };
+
+    assert.equal(inspectRepository(ambiguous).hasReadme, false);
+    assert.equal(inspectRepository(ambiguous).shouldCheckout, false);
+});
+
 test('does not clone an unrelated truncated repository without the required structure', () => {
     assert.equal(inspectRepository({ tree: [], truncated: true }).shouldCheckout, false);
     assert.equal(inspectRepository(null).shouldCheckout, false);

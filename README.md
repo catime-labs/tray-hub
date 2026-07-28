@@ -5,11 +5,12 @@ Cloudflare Worker registry and static asset service for Catime tray animations.
 ## API
 
 - `GET /sections.json` returns the website-compatible collection manifest.
-- `GET /v1/collections` is an alias for the manifest.
-- `GET /assets/:collection/:file` serves a GIF directly from Cloudflare Static
+- `GET /assets/:collection/:file` serves an animation directly from Cloudflare Static
   Assets.
-- `GET /v1/assets/:collection/:file` redirects legacy URLs to the static asset.
 - `GET /health` returns the service status.
+
+The old `/v1/*` routes and old catalog field aliases are intentionally not
+supported.
 
 Only files listed in `data/collections.json` are staged and served. Production
 requests never fetch images from GitHub. During deployment, supported source
@@ -138,8 +139,7 @@ the deployed Worker never fetches images from GitHub at runtime.
 
 Updating or adding a sibling image repository is picked up automatically the
 next time `npm run deploy` is run. The automatic workflow described below also
-detects those changes and updates `tray-hub`, which triggers the connected
-Cloudflare Workers build.
+detects those changes and updates `tray-hub`, which triggers the deploy Action.
 
 ## Automatic asset checks
 
@@ -149,9 +149,12 @@ sources, and compares `data/assets-lock.json`, which stores a versioned SHA-256
 fingerprint for every output. Repository tree checks and clones use bounded
 parallelism. The scheduled check skips conversion to avoid spending CPU every
 30 minutes. When a file is added, removed, renamed, or changed, the workflow
-commits the updated catalog and lock file back to `tray-hub`. That Git push then
-lets Cloudflare's Git integration perform the one required conversion and
-deployment.
+commits the updated catalog and lock file back to `tray-hub`. It also compares
+the public manifest with that catalog; if Git is already current but the
+deployment is missing an author or serving stale files, it creates a redeploy
+request instead of reporting that everything is synchronized. Because the
+catalog commit uses `GITHUB_TOKEN`, the workflow dispatches `deploy.yml`
+explicitly after a change; it does not rely on a second `push` trigger.
 
 The asset sync Action uses the automatically supplied `GITHUB_TOKEN` to inspect
 public repositories. Creating a public repository with `README.md`, `a.*`, and

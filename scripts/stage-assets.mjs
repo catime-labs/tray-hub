@@ -131,8 +131,6 @@ for (const repository of repositories) {
     });
     const collectionData = {
         key: repository.name,
-        title: previous?.title || repository.name,
-        author: previous?.author || repository.name,
         repository: source.repository,
         branch: source.branch,
         files,
@@ -140,11 +138,6 @@ for (const repository of repositories) {
 
     if (repositoryInfo.authorLinks.length > 0) collectionData.authorLinks = repositoryInfo.authorLinks;
     if (avatarAsset) collectionData.authorAvatar = `/avatars/${repository.name}/${avatarAsset.outputFilename}`;
-
-    for (const field of ['authorBio', 'authorUrl', 'authorTag', 'description']) {
-        const value = previous?.[field];
-        if (value) collectionData[field] = value;
-    }
 
     const unchanged = previous
         && JSON.stringify(withoutUpdated(previous)) === JSON.stringify(collectionData)
