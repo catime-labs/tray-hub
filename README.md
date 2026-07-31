@@ -113,7 +113,7 @@ bounded. The following optional environment variables tune the safety limits:
 - `TRAY_MAX_SOURCE_MB` (default `64`)
 - `TRAY_MAX_FRAMES` (default `1000`)
 - `TRAY_MAX_FRAME_PIXELS` (default `4194304`)
-- `TRAY_MAX_TOTAL_PIXELS` (default `48000000`)
+- `TRAY_MAX_TOTAL_PIXELS` (default `64000000`)
 
 Every web-ready animation also produces two collision-safe files such as
 `1.gif.webp`: a static poster under `public/posters` and an animated preview

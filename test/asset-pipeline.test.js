@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import sharp from 'sharp';
 import {
+    assertImageLimits,
     buildAsset,
     buildDisplayAssets,
     displayFilename,
@@ -15,6 +16,14 @@ import {
     validateSource,
     validateSourceSize,
 } from '../scripts/asset-pipeline.mjs';
+
+test('accepts 60-frame 960px animations within the bounded total pixel budget', () => {
+    assert.doesNotThrow(() => assertImageLimits('within-limit.webp', 960, 960, 60));
+    assert.throws(
+        () => assertImageLimits('too-large.webp', 960, 960, 70),
+        /too-large\.webp exceeds the total animation pixel limit/,
+    );
+});
 
 test('preserves image filenames and converts only ANI paths to GIF', () => {
     assert.equal(outputFilename('1.gif'), '1.gif');

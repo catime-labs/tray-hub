@@ -16,7 +16,7 @@ const DISPLAY_SIZE = 128;
 const MAX_SOURCE_BYTES = positiveInteger(process.env.TRAY_MAX_SOURCE_MB, 64) * 1024 * 1024;
 const MAX_FRAMES = positiveInteger(process.env.TRAY_MAX_FRAMES, 1000);
 const MAX_FRAME_PIXELS = positiveInteger(process.env.TRAY_MAX_FRAME_PIXELS, 4_194_304);
-const MAX_TOTAL_PIXELS = positiveInteger(process.env.TRAY_MAX_TOTAL_PIXELS, 48_000_000);
+const MAX_TOTAL_PIXELS = positiveInteger(process.env.TRAY_MAX_TOTAL_PIXELS, 64_000_000);
 const require = createRequire(import.meta.url);
 const gifsicleMessages = [];
 let gifsicleModule;
@@ -90,10 +90,9 @@ export async function validateSource(sourceFilename, contents) {
     if (extension === '.gif' && !isGif(contents)) throw new Error(`${sourceFilename} is not a GIF file`);
     if (extension === '.webp' && !isWebp(contents)) throw new Error(`${sourceFilename} is not a WebP file`);
 
-    // Sharp sees an animated image as one vertically stacked image, so its
-    // decoder limit must use the total animation budget. Per-frame dimensions
-    // are checked independently below using pageHeight.
-    const metadata = await sharp(contents, { animated: true, limitInputPixels: MAX_TOTAL_PIXELS }).metadata();
+    // Reading metadata does not decode pixels. Leave Sharp's decoder limit out
+    // of this step so oversized sources receive the filename-aware errors below.
+    const metadata = await sharp(contents, { animated: true, limitInputPixels: false }).metadata();
     const expectedFormat = extension === '.jpg' || extension === '.jpeg' ? 'jpeg' : extension.slice(1);
     if (metadata.format !== expectedFormat) throw new Error(`${sourceFilename} is not a valid ${extension.slice(1).toUpperCase()} file`);
     const frames = metadata.pages || 1;
@@ -404,7 +403,7 @@ function fourCc(buffer, offset) {
     return buffer.toString('ascii', offset, offset + 4);
 }
 
-function assertImageLimits(name, width, height, frames) {
+export function assertImageLimits(name, width, height, frames) {
     if (!width || !height) throw new Error(`${name} has invalid dimensions`);
     if (frames > MAX_FRAMES) throw new Error(`${name} contains more than ${MAX_FRAMES} frames`);
     if (width * height > MAX_FRAME_PIXELS) throw new Error(`${name} exceeds the per-frame pixel limit`);
