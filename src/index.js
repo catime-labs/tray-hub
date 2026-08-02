@@ -53,11 +53,37 @@ async function serveAsset(request, env, cors) {
         'Cache-Control',
         response.status >= 200 && response.status < 400 ? IMMUTABLE_CACHE_CONTROL : 'no-store',
     );
+    const url = new URL(request.url);
+    const downloadName = url.pathname.startsWith('/assets/')
+        ? normalizeDownloadName(url.searchParams.get('download'))
+        : '';
+    if (downloadName && response.status >= 200 && response.status < 400) {
+        headers.set('Content-Disposition', attachmentDisposition(downloadName));
+    }
     return new Response(request.method === 'HEAD' ? null : response.body, {
         status: response.status,
         statusText: response.statusText,
         headers,
     });
+}
+
+function normalizeDownloadName(value) {
+    if (!value) return '';
+    const normalized = value
+        .normalize('NFC')
+        .replace(/[<>:"/\\|?*\u0000-\u001f\u007f]+/g, '-')
+        .replace(/[. ]+$/g, '')
+        .trim();
+    return Array.from(normalized).slice(0, 180).join('');
+}
+
+function attachmentDisposition(filename) {
+    const fallback = filename
+        .replace(/[^\x20-\x7e]+/g, '_')
+        .replace(/["\\]/g, '_');
+    const encoded = encodeURIComponent(filename)
+        .replace(/['()*]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
+    return `attachment; filename="${fallback}"; filename*=UTF-8''${encoded}`;
 }
 
 function json(payload, status, cors, { headers: extraHeaders = {}, method = 'GET' } = {}) {
@@ -76,6 +102,7 @@ function corsHeaders(origin) {
     return {
         'Access-Control-Allow-Origin': origin,
         'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Headers': 'Content-Type, Range',
+        'Access-Control-Expose-Headers': 'Accept-Ranges, Content-Disposition, Content-Length, Content-Range',
     };
 }

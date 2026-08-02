@@ -15,6 +15,7 @@ test('serves a website-compatible manifest', async () => {
     assert.match(response.headers.get('Cache-Control'), /stale-while-revalidate=86400/);
     assert.ok(eirna?.files.length > 0);
     assert.equal(manifest.sections.eirna.count, eirna.files.length);
+    assert.equal(manifest.sections.eirna.directDownload, true);
     assert.deepEqual(manifest.sections.eirna.files, eirna.files);
     assert.equal('author' in manifest.sections.eirna, false);
     assert.equal('title' in manifest.sections.eirna, false);
@@ -97,6 +98,7 @@ test('serves image bindings with immutable caching while preserving asset respon
                 return new Response('preview-bytes', {
                     status: 206,
                     headers: {
+                        'Accept-Ranges': 'bytes',
                         'Content-Type': 'image/webp',
                         'Content-Range': 'bytes 0-12/13',
                     },
@@ -108,15 +110,40 @@ test('serves image bindings with immutable caching while preserving asset respon
         headers: { Range: 'bytes=0-12' },
     }), env);
     const missing = await worker.fetch(new Request('https://tray.example/posters/eirna/missing.webp'), env);
+    const download = await worker.fetch(new Request(
+        'https://tray.example/assets/eirna/1.gif?download=%E7%8C%AB%E5%92%AA-1.gif',
+    ), env);
+    const downloadHead = await worker.fetch(new Request(
+        'https://tray.example/assets/eirna/1.gif?download=%E7%8C%AB%E5%92%AA-1.gif',
+        { method: 'HEAD' },
+    ), env);
+    const unicodeBoundaryName = `${'a'.repeat(179)}🐱.gif`;
+    const unicodeBoundaryDownload = await worker.fetch(new Request(
+        `https://tray.example/assets/eirna/1.gif?download=${encodeURIComponent(unicodeBoundaryName)}`,
+    ), env);
 
     assert.equal(response.status, 206);
     assert.equal(await response.text(), 'preview-bytes');
     assert.equal(requests[0].headers.get('Range'), 'bytes=0-12');
     assert.equal(response.headers.get('Content-Type'), 'image/webp');
     assert.equal(response.headers.get('Content-Range'), 'bytes 0-12/13');
+    assert.equal(response.headers.get('Accept-Ranges'), 'bytes');
     assert.equal(response.headers.get('Access-Control-Allow-Origin'), '*');
+    assert.equal(
+        response.headers.get('Access-Control-Expose-Headers'),
+        'Accept-Ranges, Content-Disposition, Content-Length, Content-Range',
+    );
     assert.equal(response.headers.get('X-Content-Type-Options'), 'nosniff');
     assert.equal(response.headers.get('Cache-Control'), 'public, max-age=31536000, immutable');
+    assert.equal(response.headers.get('Content-Disposition'), null);
+    assert.equal(
+        download.headers.get('Content-Disposition'),
+        'attachment; filename="_-1.gif"; filename*=UTF-8\'\'%E7%8C%AB%E5%92%AA-1.gif',
+    );
+    assert.equal(downloadHead.headers.get('Content-Disposition'), download.headers.get('Content-Disposition'));
+    assert.equal(await downloadHead.text(), '');
+    assert.equal(unicodeBoundaryDownload.status, 206);
+    assert.match(unicodeBoundaryDownload.headers.get('Content-Disposition'), /%F0%9F%90%B1/);
     assert.equal(missing.status, 404);
     assert.equal(missing.headers.get('Cache-Control'), 'no-store');
 });

@@ -14,6 +14,7 @@ export function createManifest(origin) {
             ),
             authorLinks: normalizeAuthorLinks(collection.authorLinks),
             repository: collection.repository,
+            directDownload: true,
             cdnBase: `${origin}/assets/${encodeURIComponent(collection.key)}/`,
             files: collection.files,
             fileVersions: collection.files.map(filename =>
