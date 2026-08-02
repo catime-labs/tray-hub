@@ -9,9 +9,12 @@ import sharp from 'sharp';
 export const SUPPORTED_EXTENSIONS = new Set(['.ani', '.gif', '.webp', '.png', '.jpg', '.jpeg']);
 export const PIPELINE_VERSION = 'asset-pipeline-v3';
 export const POSTER_PIPELINE_VERSION = 'poster-pipeline-v1';
-export const PREVIEW_PIPELINE_VERSION = 'preview-pipeline-v2';
+export const PREVIEW_PIPELINE_VERSION = 'preview-pipeline-v3';
 
 const DISPLAY_SIZE = 128;
+const PREVIEW_SIZE = 112;
+const PREVIEW_MIN_FRAME_DELAY = 50;
+const PREVIEW_MAX_FRAMES = 60;
 
 const MAX_SOURCE_BYTES = positiveInteger(process.env.TRAY_MAX_SOURCE_MB, 64) * 1024 * 1024;
 const MAX_FRAMES = positiveInteger(process.env.TRAY_MAX_FRAMES, 1000);
@@ -442,26 +445,99 @@ async function buildPreview(source, destination) {
         limitInputPixels: MAX_TOTAL_PIXELS,
     }).metadata();
     const options = {
-        quality: 55,
-        alphaQuality: 80,
+        quality: 45,
+        alphaQuality: 70,
         effort: 6,
         smartSubsample: true,
     };
-    if ((metadata.pages || 1) > 1) {
-        options.loop = metadata.loop ?? 0;
-        options.delay = metadata.delay;
+    const pages = metadata.pages || 1;
+
+    if (pages === 1) {
+        await sharp(source, { page: 0, limitInputPixels: MAX_FRAME_PIXELS })
+            .resize(PREVIEW_SIZE, PREVIEW_SIZE, {
+                fit: 'contain',
+                background: { r: 0, g: 0, b: 0, alpha: 0 },
+            })
+            .webp(options)
+            .toFile(destination);
+        return;
     }
 
-    await sharp(source, {
+    const framePlan = createPreviewFramePlan(metadata.delay, pages);
+    const resized = await sharp(source, {
         animated: true,
         limitInputPixels: MAX_TOTAL_PIXELS,
     })
-        .resize(DISPLAY_SIZE, DISPLAY_SIZE, {
+        .resize(PREVIEW_SIZE, PREVIEW_SIZE, {
             fit: 'contain',
             background: { r: 0, g: 0, b: 0, alpha: 0 },
         })
+        .ensureAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+    const frameHeight = resized.info.pageHeight || PREVIEW_SIZE;
+    const frameBytes = resized.info.width * frameHeight * resized.info.channels;
+    const sampled = Buffer.alloc(frameBytes * framePlan.length);
+
+    framePlan.forEach((frame, outputIndex) => {
+        resized.data.copy(
+            sampled,
+            outputIndex * frameBytes,
+            frame.index * frameBytes,
+            (frame.index + 1) * frameBytes,
+        );
+    });
+
+    options.loop = metadata.loop ?? 0;
+    options.delay = framePlan.map(frame => frame.delay);
+
+    await sharp(sampled, {
+        raw: {
+            width: resized.info.width,
+            height: frameHeight * framePlan.length,
+            channels: resized.info.channels,
+            pageHeight: frameHeight,
+            premultiplied: resized.info.premultiplied,
+        },
+    })
         .webp(options)
         .toFile(destination);
+}
+
+export function createPreviewFramePlan(delays, pages) {
+    if (!Number.isInteger(pages) || pages < 1) {
+        throw new RangeError('Preview frame count must be a positive integer');
+    }
+
+    const normalizedDelays = Array.from({ length: pages }, (_, index) => {
+        const delay = Number(delays?.[index]);
+        return Number.isFinite(delay) && delay > 0 ? Math.round(delay) : 100;
+    });
+    const starts = [];
+    let totalDuration = 0;
+    normalizedDelays.forEach(delay => {
+        starts.push(totalDuration);
+        totalDuration += delay;
+    });
+    const interval = Math.max(
+        PREVIEW_MIN_FRAME_DELAY,
+        Math.ceil(totalDuration / PREVIEW_MAX_FRAMES),
+    );
+    const selected = [0];
+    let sourceIndex = 1;
+
+    for (let target = interval; target < totalDuration; target += interval) {
+        while (sourceIndex < pages && starts[sourceIndex] < target) sourceIndex += 1;
+        if (sourceIndex >= pages) break;
+        if (selected[selected.length - 1] !== sourceIndex) selected.push(sourceIndex);
+    }
+
+    return selected.map((index, outputIndex) => ({
+        index,
+        delay: (selected[outputIndex + 1] === undefined
+            ? totalDuration
+            : starts[selected[outputIndex + 1]]) - starts[index],
+    }));
 }
 
 function optimizeGif(source, destination) {

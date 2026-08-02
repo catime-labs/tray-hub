@@ -116,8 +116,10 @@ bounded. The following optional environment variables tune the safety limits:
 - `TRAY_MAX_TOTAL_PIXELS` (default `64000000`)
 
 Every web-ready animation also produces two collision-safe files such as
-`1.gif.webp`: a static poster under `public/posters` and an animated preview
-under `public/previews`. Both are rendered into a transparent 128×128 canvas.
+`1.gif.webp`: a static 128×128 poster under `public/posters` and an animated
+112×112 preview under `public/previews`. High-frame-rate previews are sampled
+across the complete timeline at roughly 20 FPS with a 60-frame ceiling, while
+preserving the animation duration and loop timing.
 The website can therefore paint a tiny poster immediately, load motion only
 when network conditions allow it, and reserve the full original for an actual
 download. These derivatives have independent pipeline versions, fingerprints,

@@ -8,6 +8,7 @@ import {
     assertImageLimits,
     buildAsset,
     buildDisplayAssets,
+    createPreviewFramePlan,
     displayFilename,
     displayFingerprint,
     outputFilename,
@@ -16,6 +17,22 @@ import {
     validateSource,
     validateSourceSize,
 } from '../scripts/asset-pipeline.mjs';
+
+test('samples high-frame-rate previews across the complete animation timeline', () => {
+    const plan = createPreviewFramePlan(Array(120).fill(20), 120);
+
+    assert.equal(plan.length, 48);
+    assert.equal(plan[0].index, 0);
+    assert.equal(plan.at(-1).index, 118);
+    assert.equal(plan.reduce((total, frame) => total + frame.delay, 0), 2400);
+    assert.ok(plan.every(frame => frame.delay >= 40 && frame.delay <= 60));
+
+    assert.deepEqual(createPreviewFramePlan([150, 90, 180], 3), [
+        { index: 0, delay: 150 },
+        { index: 1, delay: 90 },
+        { index: 2, delay: 180 },
+    ]);
+});
 
 test('accepts 60-frame 960px animations within the bounded total pixel budget', () => {
     assert.doesNotThrow(() => assertImageLimits('within-limit.webp', 960, 960, 60));
@@ -118,7 +135,7 @@ test('converts ANI cursor steps and timing to an animated GIF', async t => {
     assert.deepEqual(metadata.delay, [100, 200]);
 });
 
-test('builds 128px static posters and timed animated previews with cache reuse', async t => {
+test('builds 128px posters and sampled 112px animated previews with cache reuse', async t => {
     const directory = await mkdtemp(join(tmpdir(), 'tray-display-'));
     t.after(() => rm(directory, { recursive: true, force: true }));
 
@@ -169,8 +186,8 @@ test('builds 128px static posters and timed animated previews with cache reuse',
     assert.equal(posterMetadata.height, 128);
     assert.equal(posterMetadata.pages, undefined);
     assert.equal(previewMetadata.format, 'webp');
-    assert.equal(previewMetadata.width, 128);
-    assert.equal(previewMetadata.pageHeight, 128);
+    assert.equal(previewMetadata.width, 112);
+    assert.equal(previewMetadata.pageHeight, 112);
     assert.equal(previewMetadata.pages, 2);
     assert.deepEqual(previewMetadata.delay, [80, 120]);
     assert.equal(previewMetadata.delay.reduce((sum, delay) => sum + delay, 0), 200);
